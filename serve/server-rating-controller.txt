@@ -1,0 +1,330 @@
+import { Request, Response } from 'express';
+import { supabase } from '../utils/server-supabase';
+import { logger } from '../utils/logger';
+import { catchAsync, createError } from '../utils/server-error-handler';
+import { CreateRatingSchema, UpdateRatingSchema } from '@shared/schema/rating-schema';
+
+/**
+ * Controller per creare una nuova valutazione
+ */
+export const createRating = catchAsync(async (req: Request, res: Response) => {
+  if (!req.user || !req.userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Autenticazione richiesta',
+    });
+  }
+  
+  // Solo i clienti possono lasciare valutazioni
+  if (req.user.userType !== 'customer') {
+    return res.status(403).json({
+      success: false,
+      message: 'Solo i clienti possono lasciare valutazioni',
+    });
+  }
+  
+  const { entityId, entityType, rating, comment } = req.body;
+  
+  // Verifica che l'entità esista
+  let entityExists = false;
+  
+  if (entityType === 'subscription_plans') {
+    const { data } = await supabase
+      .from('subscription_plans')
+      .select('id')
+      .eq('id', entityId)
+      .single();
+    
+    entityExists = !!data;
+  } else if (entityType === 'restaurants') {
+    const { data } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', entityId)
+      .eq('userType', 'tavola_calda')
+      .single();
+    
+    entityExists = !!data;
+  }
+  
+  if (!entityExists) {
+    return res.status(404).json({
+      success: false,
+      message: 'Entità non trovata',
+    });
+  }
+  
+  // Verifica se l'utente ha già valutato questa entità
+  const { data: existingRating, error: checkError } = await supabase
+    .from('ratings')
+    .select('id')
+    .eq('userId', req.userId)
+    .eq('entityId', entityId)
+    .eq('entityType', entityType)
+    .single();
+  
+  if (existingRating) {
+    return res.status(400).json({
+      success: false,
+      message: 'Hai già valutato questa entità',
+    });
+  }
+  
+  // Crea la valutazione
+  const ratingData = {
+    userId: req.userId,
+    entityId,
+    entityType,
+    rating,
+    comment: comment || null,
+  };
+  
+  const { data: newRating, error } = await supabase
+    .from('ratings')
+    .insert([ratingData])
+    .select()
+    .single();
+  
+  if (error) {
+    logger.error(`Errore durante la creazione della valutazione: ${error.message}`);
+    
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Errore durante la creazione della valutazione',
+    });
+  }
+  
+  logger.info(`Nuova valutazione creata: ${newRating.id} per ${entityType} ${entityId}`);
+  
+  res.status(201).json({
+    success: true,
+    message: 'Valutazione creata con successo',
+    rating: newRating,
+  });
+});
+
+/**
+ * Controller per aggiornare una valutazione esistente
+ */
+export const updateRating = catchAsync(async (req: Request, res: Response) => {
+  if (!req.user || !req.userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Autenticazione richiesta',
+    });
+  }
+  
+  const { ratingId } = req.params;
+  const { rating, comment } = req.body;
+  
+  // Verifica che la valutazione esista e appartenga all'utente
+  const { data: existingRating, error: findError } = await supabase
+    .from('ratings')
+    .select('*')
+    .eq('id', ratingId)
+    .single();
+  
+  if (findError || !existingRating) {
+    logger.warn(`Valutazione non trovata: ${ratingId}`);
+    
+    return res.status(404).json({
+      success: false,
+      message: 'Valutazione non trovata',
+    });
+  }
+  
+  if (existingRating.userId !== req.userId) {
+    logger.warn(`Tentativo non autorizzato di modificare la valutazione ${ratingId} da parte dell'utente ${req.userId}`);
+    
+    return res.status(403).json({
+      success: false,
+      message: 'Non sei autorizzato a modificare questa valutazione',
+    });
+  }
+  
+  // Aggiorna la valutazione
+  const updateData = {
+    rating: rating !== undefined ? rating : existingRating.rating,
+    comment: comment !== undefined ? comment : existingRating.comment,
+    updatedAt: new Date(),
+  };
+  
+  const { data: updatedRating, error } = await supabase
+    .from('ratings')
+    .update(updateData)
+    .eq('id', ratingId)
+    .select()
+    .single();
+  
+  if (error) {
+    logger.error(`Errore durante l'aggiornamento della valutazione: ${error.message}`);
+    
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Errore durante l\'aggiornamento della valutazione',
+    });
+  }
+  
+  logger.info(`Valutazione aggiornata: ${ratingId}`);
+  
+  res.json({
+    success: true,
+    message: 'Valutazione aggiornata con successo',
+    rating: updatedRating,
+  });
+});
+
+/**
+ * Controller per eliminare una valutazione
+ */
+export const deleteRating = catchAsync(async (req: Request, res: Response) => {
+  if (!req.user || !req.userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Autenticazione richiesta',
+    });
+  }
+  
+  const { ratingId } = req.params;
+  
+  // Verifica che la valutazione esista e appartenga all'utente
+  const { data: existingRating, error: findError } = await supabase
+    .from('ratings')
+    .select('*')
+    .eq('id', ratingId)
+    .single();
+  
+  if (findError || !existingRating) {
+    logger.warn(`Valutazione non trovata: ${ratingId}`);
+    
+    return res.status(404).json({
+      success: false,
+      message: 'Valutazione non trovata',
+    });
+  }
+  
+  if (existingRating.userId !== req.userId) {
+    logger.warn(`Tentativo non autorizzato di eliminare la valutazione ${ratingId} da parte dell'utente ${req.userId}`);
+    
+    return res.status(403).json({
+      success: false,
+      message: 'Non sei autorizzato a eliminare questa valutazione',
+    });
+  }
+  
+  // Elimina la valutazione
+  const { error } = await supabase
+    .from('ratings')
+    .delete()
+    .eq('id', ratingId);
+  
+  if (error) {
+    logger.error(`Errore durante l'eliminazione della valutazione: ${error.message}`);
+    
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Errore durante l\'eliminazione della valutazione',
+    });
+  }
+  
+  logger.info(`Valutazione eliminata: ${ratingId}`);
+  
+  res.json({
+    success: true,
+    message: 'Valutazione eliminata con successo',
+  });
+});
+
+/**
+ * Controller per ottenere le valutazioni di un'entità
+ */
+export const getEntityRatings = catchAsync(async (req: Request, res: Response) => {
+  const { entityId, entityType } = req.params;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  
+  // Calcola l'offset per la paginazione
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  
+  // Ottieni le valutazioni
+  const { data: ratings, error, count } = await supabase
+    .from('ratings')
+    .select(`
+      *,
+      user:users(id, name)
+    `, { count: 'exact' })
+    .eq('entityId', entityId)
+    .eq('entityType', entityType)
+    .order('createdAt', { ascending: false })
+    .range(from, to);
+  
+  if (error) {
+    logger.error(`Errore durante il recupero delle valutazioni: ${error.message}`);
+    
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Errore durante il recupero delle valutazioni',
+    });
+  }
+  
+  // Calcola la valutazione media
+  const { data: stats, error: statsError } = await supabase
+    .from('ratings')
+    .select('rating')
+    .eq('entityId', entityId)
+    .eq('entityType', entityType);
+  
+  let averageRating = 0;
+  let totalRatings = 0;
+  
+  if (!statsError && stats && stats.length > 0) {
+    totalRatings = stats.length;
+    const totalRating = stats.reduce((sum, r) => sum + r.rating, 0);
+    averageRating = totalRating / totalRatings;
+  }
+  
+  res.json({
+    success: true,
+    ratings,
+    averageRating,
+    totalRatings,
+    total: count || 0,
+    page,
+    limit,
+    totalPages: count ? Math.ceil(count / limit) : 0,
+  });
+});
+
+/**
+ * Controller per ottenere le valutazioni lasciate da un utente
+ */
+export const getUserRatings = catchAsync(async (req: Request, res: Response) => {
+  if (!req.user || !req.userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Autenticazione richiesta',
+    });
+  }
+  
+  const userId = req.params.userId || req.userId;
+  
+  // Se l'utente sta cercando di vedere le valutazioni di un altro utente
+  if (userId !== req.userId && req.user.userType !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Non sei autorizzato a vedere le valutazioni di altri utenti',
+    });
+  }
+  
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  
+  // Calcola l'offset per la paginazione
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  
+  // Ottieni le valutazioni
+  const { data: ratings, error, count } = await supabase
+    .from('ratings')
+    .select('

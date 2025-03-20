@@ -1,0 +1,359 @@
+/**
+ * Servizio di accesso al database per la gestione degli abbonamenti
+ */
+import { supabase } from './supabase-client';
+import { CreatePlanInput, UpdatePlanInput } from '../../shared/types/common-types';
+import { logger } from '../utils/logger';
+
+/**
+ * Classe per le operazioni relative agli abbonamenti
+ */
+export class SubscriptionsDb {
+  /**
+   * Ottiene tutti i piani di abbonamento attivi
+   * @param filters Filtri opzionali
+   * @returns Piani di abbonamento
+   */
+  async getAllActivePlans(filters?: Record<string, any>) {
+    try {
+      let query = supabase
+        .from('subscription_plans')
+        .select(`
+          *,
+          restaurants:restaurant_id (
+            name,
+            business_name,
+            business_type,
+            address
+          ),
+          pickup_points:pickup_location_id (
+            id,
+            name,
+            address,
+            latitude,
+            longitude
+          ),
+          ratings (
+            rating
+          )
+        `)
+        .eq('active', true);
+
+      // Applica i filtri se presenti
+      if (filters) {
+        // Filtro per tipo di cucina
+        if (filters.cuisineType && filters.cuisineType !== 'Tutti') {
+          query = query.eq('restaurants.business_type', filters.cuisineType);
+        }
+
+        // Filtro per prezzo massimo
+        if (filters.maxPrice) {
+          query = query.lte('discounted_price', filters.maxPrice);
+        }
+
+        // Filtro per giorno della settimana
+        if (filters.dayOfWeek) {
+          query = query.ilike('available_days', `%${filters.dayOfWeek}%`);
+        }
+
+        // Filtro per ricerca testuale
+        if (filters.query) {
+          query = query.or(`title.ilike.%${filters.query}%,description.ilike.%${filters.query}%`);
+        }
+
+        // Filtro per tag
+        if (filters.tags && filters.tags.length > 0) {
+          filters.tags.forEach((tag: string) => {
+            query = query.contains('tags', [tag]);
+          });
+        }
+      }
+
+      // Esegui la query
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Calcola il rating medio per ogni piano
+      return data.map(plan => {
+        const ratings = plan.ratings || [];
+        const averageRating = ratings.length > 0
+          ? ratings.reduce((sum: number, item: any) => sum + item.rating, 0) / ratings.length
+          : 0;
+
+        return {
+          ...plan,
+          averageRating,
+          ratingsCount: ratings.length,
+          // Converte available_days da stringa a array
+          availableDays: plan.available_days.split(','),
+          // Pulizia
+          ratings: undefined,
+          restaurants: undefined,
+          restaurant: plan.restaurants || null,
+          pickupPoint: plan.pickup_points || null,
+          pickup_points: undefined
+        };
+      });
+    } catch (error) {
+      logger.error('Error getting subscription plans', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene un piano di abbonamento specifico
+   * @param planId ID del piano
+   * @returns Dettagli del piano
+   */
+  async getPlanById(planId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('subscription_plans')
+        .select(`
+          *,
+          restaurants:restaurant_id (
+            id,
+            name,
+            business_name,
+            business_type,
+            address,
+            description,
+            profile_image_url
+          ),
+          pickup_points:pickup_location_id (
+            id,
+            name,
+            address,
+            latitude,
+            longitude,
+            business_hours,
+            pickup_times
+          ),
+          ratings (
+            id,
+            user_id,
+            rating,
+            comment,
+            created_at
+          ),
+          subscription_discounts (
+            id,
+            deliveries_per_week,
+            duration_weeks,
+            discount_percentage
+          )
+        `)
+        .eq('id', planId)
+        .single();
+
+      if (error) throw error;
+
+      // Calcola il rating medio
+      const ratings = data.ratings || [];
+      const averageRating = ratings.length > 0
+        ? ratings.reduce((sum: number, item: any) => sum + item.rating, 0) / ratings.length
+        : 0;
+
+      return {
+        ...data,
+        averageRating,
+        ratingsCount: ratings.length,
+        // Converte available_days da stringa a array
+        availableDays: data.available_days.split(','),
+        // Rinomina e pulizia
+        restaurant: data.restaurants || null,
+        restaurants: undefined,
+        pickupPoint: data.pickup_points || null,
+        pickup_points: undefined,
+        discounts: data.subscription_discounts || [],
+        subscription_discounts: undefined
+      };
+    } catch (error) {
+      logger.error(`Error getting subscription plan with ID ${planId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene i piani di abbonamento di un ristorante
+   * @param restaurantId ID del ristorante
+   * @returns Piani di abbonamento
+   */
+  async getPlansByRestaurantId(restaurantId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('subscription_plans')
+        .select(`
+          *,
+          pickup_points:pickup_location_id (
+            id,
+            name,
+            address
+          ),
+          ratings (
+            rating
+          )
+        `)
+        .eq('restaurant_id', restaurantId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Calcola il rating medio per ogni piano
+      return data.map(plan => {
+        const ratings = plan.ratings || [];
+        const averageRating = ratings.length > 0
+          ? ratings.reduce((sum: number, item: any) => sum + item.rating, 0) / ratings.length
+          : 0;
+
+        return {
+          ...plan,
+          averageRating,
+          ratingsCount: ratings.length,
+          // Converte available_days da stringa a array
+          availableDays: plan.available_days.split(','),
+          // Pulizia
+          ratings: undefined,
+          pickupPoint: plan.pickup_points || null,
+          pickup_points: undefined
+        };
+      });
+    } catch (error) {
+      logger.error(`Error getting subscription plans for restaurant ${restaurantId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Crea un nuovo piano di abbonamento
+   * @param planData Dati del piano
+   * @returns Piano creato
+   */
+  async createPlan(planData: CreatePlanInput & { restaurantId: string }) {
+    try {
+      // Prepara i dati per l'inserimento
+      const planInsertData = {
+        restaurant_id: planData.restaurantId,
+        title: planData.title,
+        description: planData.description,
+        original_price: planData.originalPrice,
+        discounted_price: planData.originalPrice, // Inizialmente uguale al prezzo originale
+        pickup_time_start: planData.pickupTimeStart,
+        pickup_time_end: planData.pickupTimeEnd,
+        pickup_location_id: planData.pickupLocationId,
+        available_days: planData.availableDays.join(','),
+        max_portions: planData.maxPortions,
+        min_subscription_days: planData.minSubscriptionDays,
+        available_portions: planData.maxPortions, // Inizialmente disponibili = max
+        tags: planData.tags,
+        active: true,
+        image_url: planData.imageUrl || null
+      };
+
+      // Inserisci il piano
+      const { data: plan, error: planError } = await supabase
+        .from('subscription_plans')
+        .insert(planInsertData)
+        .select()
+        .single();
+
+      if (planError) throw planError;
+
+      // Se ci sono sconti, li inseriamo
+      if (planData.discounts && planData.discounts.length > 0) {
+        const discountsToInsert = planData.discounts.map(discount => ({
+          plan_id: plan.id,
+          deliveries_per_week: discount.deliveriesPerWeek,
+          duration_weeks: discount.durationWeeks,
+          discount_percentage: discount.discountPercentage
+        }));
+
+        const { error: discountError } = await supabase
+          .from('subscription_discounts')
+          .insert(discountsToInsert);
+
+        if (discountError) throw discountError;
+      }
+
+      // Aggiorna il prezzo scontato in base allo sconto maggiore
+      if (planData.discounts && planData.discounts.length > 0) {
+        const maxDiscount = planData.discounts.reduce((max, curr) => 
+          curr.discountPercentage > max.discountPercentage ? curr : max, 
+          planData.discounts[0]
+        );
+        
+        const discountedPrice = planData.originalPrice * (1 - maxDiscount.discountPercentage / 100);
+        
+        const { data: updatedPlan, error: updateError } = await supabase
+          .from('subscription_plans')
+          .update({ discounted_price: discountedPrice })
+          .eq('id', plan.id)
+          .select()
+          .single();
+          
+        if (updateError) throw updateError;
+        
+        return {
+          ...updatedPlan,
+          availableDays: updatedPlan.available_days.split(',')
+        };
+      }
+
+      return {
+        ...plan,
+        availableDays: plan.available_days.split(',')
+      };
+    } catch (error) {
+      logger.error('Error creating subscription plan', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aggiorna un piano di abbonamento esistente
+   * @param planId ID del piano
+   * @param planData Dati del piano
+   * @returns Piano aggiornato
+   */
+  async updatePlan(planId: string, planData: UpdatePlanInput) {
+    try {
+      // Prepara i dati per l'aggiornamento
+      const updateData: Record<string, any> = {};
+      
+      // Aggiorna solo i campi forniti
+      if (planData.title !== undefined) updateData.title = planData.title;
+      if (planData.description !== undefined) updateData.description = planData.description;
+      if (planData.originalPrice !== undefined) updateData.original_price = planData.originalPrice;
+      if (planData.pickupTimeStart !== undefined) updateData.pickup_time_start = planData.pickupTimeStart;
+      if (planData.pickupTimeEnd !== undefined) updateData.pickup_time_end = planData.pickupTimeEnd;
+      if (planData.pickupLocationId !== undefined) updateData.pickup_location_id = planData.pickupLocationId;
+      if (planData.availableDays !== undefined) updateData.available_days = planData.availableDays.join(',');
+      if (planData.maxPortions !== undefined) updateData.max_portions = planData.maxPortions;
+      if (planData.minSubscriptionDays !== undefined) updateData.min_subscription_days = planData.minSubscriptionDays;
+      if (planData.tags !== undefined) updateData.tags = planData.tags;
+      if (planData.active !== undefined) updateData.active = planData.active;
+      if (planData.imageUrl !== undefined) updateData.image_url = planData.imageUrl;
+      
+      // Aggiorna il piano
+      const { data: plan, error: planError } = await supabase
+        .from('subscription_plans')
+        .update(updateData)
+        .eq('id', planId)
+        .select()
+        .single();
+
+      if (planError) throw planError;
+
+      // Se ci sono sconti da aggiornare
+      if (planData.discounts && planData.discounts.length > 0) {
+        // Prima eliminiamo i vecchi sconti
+        const { error: deleteError } = await supabase
+          .from('subscription_discounts')
+          .delete()
+          .eq('plan_id', planId);
+
+        if (deleteError) throw deleteError;
+
+        // Poi inseriamo i nuovi
+        const discountsToInsert = plan

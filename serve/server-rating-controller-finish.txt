@@ -1,0 +1,29 @@
+  // Ottieni le valutazioni
+  const { data: ratings, error, count } = await supabase
+    .from('ratings')
+    .select(`
+      *,
+      entity:${userId === req.userId ? "entityDetails:dynamic" : "entityId"}
+    `, { count: 'exact' })
+    .eq('userId', userId)
+    .order('createdAt', { ascending: false })
+    .range(from, to);
+  
+  if (error) {
+    logger.error(`Errore durante il recupero delle valutazioni: ${error.message}`);
+    
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Errore durante il recupero delle valutazioni',
+    });
+  }
+  
+  res.json({
+    success: true,
+    ratings,
+    total: count || 0,
+    page,
+    limit,
+    totalPages: count ? Math.ceil(count / limit) : 0,
+  });
+});
