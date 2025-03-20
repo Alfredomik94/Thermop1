@@ -1,0 +1,328 @@
+// server/routes/user-routes.ts
+import express from 'express';
+import * as userController from '../controllers/user-controller.js';
+import { authMiddleware } from '../middleware/auth-middleware.js';
+
+const router = express.Router();
+
+// Rotte pubbliche (per ottenere informazioni sui ristoranti)
+router.get('/restaurants', userController.getRestaurants);
+router.get('/restaurants/:id', userController.getRestaurantById);
+router.get('/restaurants/nearby', userController.getNearbyRestaurants);
+router.get('/onlus', userController.getOnlusOrganizations);
+
+// Rotte protette che richiedono autenticazione
+router.use(authMiddleware);
+
+// Ottieni informazioni sull'utente corrente
+router.get('/me', userController.getCurrentUser);
+
+// Aggiorna il profilo dell'utente corrente
+router.put('/me', userController.updateProfile);
+
+// Ottieni i ristoranti preferiti dell'utente
+router.get('/me/favorite-restaurants', userController.getFavoriteRestaurants);
+
+// Aggiungi un ristorante ai preferiti
+router.post('/me/favorite-restaurants/:id', userController.addFavoriteRestaurant);
+
+// Rimuovi un ristorante dai preferiti
+router.delete('/me/favorite-restaurants/:id', userController.removeFavoriteRestaurant);
+
+// Ottieni le impostazioni dell'utente
+router.get('/me/settings', userController.getUserSettings);
+
+// Aggiorna le impostazioni dell'utente
+router.put('/me/settings', userController.updateUserSettings);
+
+export default router;
+
+// server/controllers/user-controller.ts
+import { Request, Response } from 'express';
+import * as usersDb from '../db/users-db.js';
+import { calculateDistance } from '../utils/geo-utils.js';
+
+// Ottieni tutti i ristoranti
+export const getRestaurants = async (req: Request, res: Response) => {
+  try {
+    const { cuisineType } = req.query;
+    
+    const restaurants = await usersDb.getRestaurants(cuisineType as string | undefined);
+    res.json(restaurants);
+  } catch (error: any) {
+    console.error('Errore nel recupero dei ristoranti:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Ottieni un ristorante specifico
+export const getRestaurantById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const restaurant = await usersDb.getUserById(parseInt(id));
+    
+    if (!restaurant || restaurant.user_type !== 'tavola_calda') {
+      return res.status(404).json({ message: 'Ristorante non trovato' });
+    }
+    
+    res.json(restaurant);
+  } catch (error: any) {
+    console.error('Errore nel recupero del ristorante:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Ottieni ristoranti nelle vicinanze
+export const getNearbyRestaurants = async (req: Request, res: Response) => {
+  try {
+    const { lat, lng, radius = '5', cuisineType } = req.query;
+    
+    if (!lat || !lng) {
+      return res.status(400).json({ message: 'Coordinate non fornite' });
+    }
+    
+    const latitude = parseFloat(lat as string);
+    const longitude = parseFloat(lng as string);
+    const radiusKm = parseFloat(radius as string);
+    
+    if (isNaN(latitude) || isNaN(longitude) || isNaN(radiusKm)) {
+      return res.status(400).json({ message: 'Parametri non validi' });
+    }
+    
+    // Recupera tutti i ristoranti
+    const restaurants = await usersDb.getRestaurants(cuisineType as string | undefined);
+    
+    // Filtra e calcola la distanza
+    const nearbyRestaurants = restaurants
+      .filter(restaurant => restaurant.address && restaurant.latitude && restaurant.longitude)
+      .map(restaurant => {
+        const distance = calculateDistance(
+          latitude,
+          longitude,
+          restaurant.latitude!,
+          restaurant.longitude!
+        );
+        
+        return {
+          ...restaurant,
+          distance,
+          distance_text: `${distance.toFixed(1)} km`
+        };
+      })
+      .filter(restaurant => restaurant.distance <= radiusKm)
+      .sort((a, b) => a.distance - b.distance);
+    
+    res.json(nearbyRestaurants);
+  } catch (error: any) {
+    console.error('Errore nel recupero dei ristoranti nelle vicinanze:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Ottieni tutte le organizzazioni ONLUS
+export const getOnlusOrganizations = async (req: Request, res: Response) => {
+  try {
+    const onlusOrganizations = await usersDb.getOnlusOrganizations();
+    res.json(onlusOrganizations);
+  } catch (error: any) {
+    console.error('Errore nel recupero delle organizzazioni ONLUS:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Ottieni l'utente corrente
+export const getCurrentUser = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    const user = await usersDb.getUserById(req.session.userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Utente non trovato' });
+    }
+    
+    // Rimuovi la password dalla risposta
+    const { password, ...userWithoutPassword } = user;
+    
+    res.json(userWithoutPassword);
+  } catch (error: any) {
+    console.error('Errore nel recupero dell\'utente corrente:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Aggiorna il profilo dell'utente
+export const updateProfile = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    // Verifica che l'utente esista
+    const existingUser = await usersDb.getUserById(req.session.userId);
+    if (!existingUser) {
+      return res.status(404).json({ message: 'Utente non trovato' });
+    }
+    
+    // Aggiorna il profilo
+    const updatedUser = await usersDb.updateUser(req.session.userId, req.body);
+    
+    // Rimuovi la password dalla risposta
+    const { password, ...userWithoutPassword } = updatedUser;
+    
+    res.json(userWithoutPassword);
+  } catch (error: any) {
+    console.error('Errore nell\'aggiornamento del profilo:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Ottieni i ristoranti preferiti dell'utente
+export const getFavoriteRestaurants = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    const user = await usersDb.getUserById(req.session.userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Utente non trovato' });
+    }
+    
+    if (!user.favorite_restaurants || !Array.isArray(user.favorite_restaurants)) {
+      return res.json([]);
+    }
+    
+    const favoriteRestaurants = await usersDb.getRestaurantsByIds(user.favorite_restaurants);
+    res.json(favoriteRestaurants);
+  } catch (error: any) {
+    console.error('Errore nel recupero dei ristoranti preferiti:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Aggiungi un ristorante ai preferiti
+export const addFavoriteRestaurant = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    const { id } = req.params;
+    const restaurantId = parseInt(id);
+    
+    // Verifica che il ristorante esista
+    const restaurant = await usersDb.getUserById(restaurantId);
+    if (!restaurant || restaurant.user_type !== 'tavola_calda') {
+      return res.status(404).json({ message: 'Ristorante non trovato' });
+    }
+    
+    // Recupera l'utente corrente
+    const user = await usersDb.getUserById(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Utente non trovato' });
+    }
+    
+    // Aggiungi il ristorante ai preferiti
+    const favoriteRestaurants = user.favorite_restaurants || [];
+    
+    if (favoriteRestaurants.includes(restaurantId)) {
+      return res.status(400).json({ message: 'Il ristorante è già nei preferiti' });
+    }
+    
+    favoriteRestaurants.push(restaurantId);
+    
+    // Aggiorna l'utente
+    const updatedUser = await usersDb.updateUser(req.session.userId, {
+      favorite_restaurants: favoriteRestaurants
+    });
+    
+    res.json({ message: 'Ristorante aggiunto ai preferiti', favorite_restaurants: updatedUser.favorite_restaurants });
+  } catch (error: any) {
+    console.error('Errore nell\'aggiunta del ristorante ai preferiti:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Rimuovi un ristorante dai preferiti
+export const removeFavoriteRestaurant = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    const { id } = req.params;
+    const restaurantId = parseInt(id);
+    
+    // Recupera l'utente corrente
+    const user = await usersDb.getUserById(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Utente non trovato' });
+    }
+    
+    // Rimuovi il ristorante dai preferiti
+    const favoriteRestaurants = user.favorite_restaurants || [];
+    
+    if (!favoriteRestaurants.includes(restaurantId)) {
+      return res.status(400).json({ message: 'Il ristorante non è nei preferiti' });
+    }
+    
+    const updatedFavorites = favoriteRestaurants.filter(id => id !== restaurantId);
+    
+    // Aggiorna l'utente
+    const updatedUser = await usersDb.updateUser(req.session.userId, {
+      favorite_restaurants: updatedFavorites
+    });
+    
+    res.json({ message: 'Ristorante rimosso dai preferiti', favorite_restaurants: updatedUser.favorite_restaurants });
+  } catch (error: any) {
+    console.error('Errore nella rimozione del ristorante dai preferiti:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Ottieni le impostazioni dell'utente
+export const getUserSettings = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    // Recupera le impostazioni
+    // In una implementazione reale, si potrebbe avere una tabella apposita per le impostazioni
+    
+    res.json({ 
+      notifications_enabled: true,
+      email_notifications: true,
+      preferred_pickup_point: null,
+      theme: 'light'
+    });
+  } catch (error: any) {
+    console.error('Errore nel recupero delle impostazioni:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Aggiorna le impostazioni dell'utente
+export const updateUserSettings = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    // Aggiorna le impostazioni
+    // In una implementazione reale, si salverebbero in una tabella apposita
+    
+    res.json({ 
+      ...req.body,
+      updated_at: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('Errore nell\'aggiornamento delle impostazioni:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};

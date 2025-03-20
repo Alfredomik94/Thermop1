@@ -1,0 +1,610 @@
+/**
+ * Servizio di accesso al database per la gestione degli ordini
+ */
+import { supabase } from './supabase-client';
+import { CreateOrder, UpdateOrder, DonateOrder } from '../../shared/schema/order-schema';
+import { logger } from '../utils/logger';
+import subscriptionsDb from './subscriptions-db';
+
+/**
+ * Classe per le operazioni relative agli ordini
+ */
+export class OrdersDb {
+  /**
+   * Ottiene tutti gli ordini di un utente
+   * @param userId ID dell'utente
+   * @returns Lista degli ordini
+   */
+  async getOrdersByUserId(userId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          subscription_plans:plan_id (
+            title,
+            discounted_price,
+            original_price,
+            restaurant_id,
+            restaurants:restaurant_id (
+              name,
+              business_name
+            )
+          ),
+          pickup_points:pickup_point_id (
+            name,
+            address
+          )
+        `)
+        .eq('user_id', userId)
+        .order('delivery_date', { ascending: true });
+
+      if (error) throw error;
+
+      // Formatta i dati
+      return data.map(order => ({
+        ...order,
+        planTitle: order.subscription_plans?.title || 'Piano sconosciuto',
+        restaurantName: order.subscription_plans?.restaurants?.business_name || 
+                        order.subscription_plans?.restaurants?.name || 
+                        'Ristorante sconosciuto',
+        pickupLocationName: order.pickup_points?.name || 'Punto di ritiro sconosciuto',
+        pickupAddress: order.pickup_points?.address || '',
+        originalPrice: order.subscription_plans?.original_price || 0,
+        discountedPrice: order.subscription_plans?.discounted_price || 0,
+        totalPrice: (order.subscription_plans?.discounted_price || 0) * order.quantity,
+        // Pulizia
+        subscription_plans: undefined,
+        pickup_points: undefined
+      }));
+    } catch (error) {
+      logger.error(`Error getting orders for user ${userId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene gli ordini per un ristorante
+   * @param restaurantId ID del ristorante
+   * @returns Lista degli ordini
+   */
+  async getOrdersByRestaurantId(restaurantId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          users:user_id (
+            name,
+            address
+          ),
+          subscription_plans:plan_id (
+            title,
+            discounted_price,
+            original_price
+          ),
+          pickup_points:pickup_point_id (
+            name,
+            address
+          )
+        `)
+        .eq('subscription_plans.restaurant_id', restaurantId)
+        .order('delivery_date', { ascending: true });
+
+      if (error) throw error;
+
+      // Formatta i dati
+      return data.map(order => ({
+        ...order,
+        customerName: order.users?.name || 'Cliente sconosciuto',
+        customerAddress: order.users?.address || '',
+        planTitle: order.subscription_plans?.title || 'Piano sconosciuto',
+        pickupLocationName: order.pickup_points?.name || 'Punto di ritiro sconosciuto',
+        pickupAddress: order.pickup_points?.address || '',
+        originalPrice: order.subscription_plans?.original_price || 0,
+        discountedPrice: order.subscription_plans?.discounted_price || 0,
+        totalPrice: (order.subscription_plans?.discounted_price || 0) * order.quantity,
+        // Pulizia
+        users: undefined,
+        subscription_plans: undefined,
+        pickup_points: undefined
+      }));
+    } catch (error) {
+      logger.error(`Error getting orders for restaurant ${restaurantId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene le donazioni per una ONLUS
+   * @param onlusId ID della ONLUS
+   * @returns Lista delle donazioni
+   */
+  async getDonationsByOnlusId(onlusId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          donors:user_id (
+            name
+          ),
+          subscription_plans:plan_id (
+            title,
+            restaurant_id,
+            restaurants:restaurant_id (
+              name,
+              business_name
+            )
+          ),
+          pickup_points:pickup_point_id (
+            name,
+            address
+          )
+        `)
+        .eq('donated_to', onlusId)
+        .order('donation_date', { ascending: false });
+
+      if (error) throw error;
+
+      // Formatta i dati
+      return data.map(donation => ({
+        ...donation,
+        donorName: donation.donors?.name || 'Donatore anonimo',
+        planTitle: donation.subscription_plans?.title || 'Piano sconosciuto',
+        restaurantName: donation.subscription_plans?.restaurants?.business_name || 
+                        donation.subscription_plans?.restaurants?.name || 
+                        'Ristorante sconosciuto',
+        pickupLocationName: donation.pickup_points?.name || 'Punto di ritiro sconosciuto',
+        pickupAddress: donation.pickup_points?.address || '',
+        // Pulizia
+        donors: undefined,
+        subscription_plans: undefined,
+        pickup_points: undefined
+      }));
+    } catch (error) {
+      logger.error(`Error getting donations for ONLUS ${onlusId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene un ordine specifico
+   * @param orderId ID dell'ordine
+   * @returns Dettagli dell'ordine
+   */
+  async getOrderById(orderId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          users:user_id (
+            name,
+            address
+          ),
+          subscription_plans:plan_id (
+            title,
+            description,
+            discounted_price,
+            original_price,
+            restaurant_id,
+            image_url,
+            restaurants:restaurant_id (
+              name,
+              business_name,
+              address
+            )
+          ),
+          pickup_points:pickup_point_id (
+            name,
+            address,
+            latitude,
+            longitude
+          ),
+          onlus:donated_to (
+            name,
+            business_name
+          )
+        `)
+        .eq('id', orderId)
+        .single();
+
+      if (error) throw error;
+
+      // Formatta i dati
+      return {
+        ...data,
+        customerName: data.users?.name || 'Cliente sconosciuto',
+        customerAddress: data.users?.address || '',
+        planTitle: data.subscription_plans?.title || 'Piano sconosciuto',
+        planDescription: data.subscription_plans?.description || '',
+        restaurantName: data.subscription_plans?.restaurants?.business_name || 
+                        data.subscription_plans?.restaurants?.name || 
+                        'Ristorante sconosciuto',
+        restaurantAddress: data.subscription_plans?.restaurants?.address || '',
+        restaurantId: data.subscription_plans?.restaurant_id || '',
+        pickupLocationName: data.pickup_points?.name || 'Punto di ritiro sconosciuto',
+        pickupAddress: data.pickup_points?.address || '',
+        pickupLocation: {
+          latitude: data.pickup_points?.latitude || 0,
+          longitude: data.pickup_points?.longitude || 0
+        },
+        originalPrice: data.subscription_plans?.original_price || 0,
+        discountedPrice: data.subscription_plans?.discounted_price || 0,
+        totalPrice: (data.subscription_plans?.discounted_price || 0) * data.quantity,
+        donatedToName: data.onlus?.business_name || data.onlus?.name || null,
+        imageUrl: data.subscription_plans?.image_url || null,
+        // Pulizia
+        users: undefined,
+        subscription_plans: undefined,
+        pickup_points: undefined,
+        onlus: undefined
+      };
+    } catch (error) {
+      logger.error(`Error getting order with ID ${orderId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Crea un nuovo ordine
+   * @param orderData Dati dell'ordine
+   * @returns Ordine creato
+   */
+  async createOrder(orderData: CreateOrder) {
+    try {
+      // Verifica che il piano esista e sia attivo
+      const { data: plan, error: planError } = await supabase
+        .from('subscription_plans')
+        .select('id, available_portions, active')
+        .eq('id', orderData.planId)
+        .eq('active', true)
+        .single();
+
+      if (planError) {
+        throw new Error('Piano non trovato o non attivo');
+      }
+
+      // Verifica che ci siano porzioni disponibili
+      if (plan.available_portions < orderData.quantity) {
+        throw new Error('Porzioni non sufficienti');
+      }
+
+      // Inserisci l'ordine
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          user_id: orderData.userId,
+          plan_id: orderData.planId,
+          quantity: orderData.quantity,
+          delivery_date: orderData.deliveryDate,
+          pickup_point_id: orderData.pickupPointId,
+          status: 'pending',
+          notes: orderData.notes || null
+        })
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      // Aggiorna il numero di porzioni disponibili
+      await subscriptionsDb.updateAvailablePortions(orderData.planId, -orderData.quantity);
+
+      return order;
+    } catch (error) {
+      logger.error('Error creating order', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aggiorna un ordine esistente
+   * @param orderId ID dell'ordine
+   * @param orderData Dati dell'ordine
+   * @returns Ordine aggiornato
+   */
+  async updateOrder(orderId: string, orderData: UpdateOrder) {
+    try {
+      // Ottieni l'ordine attuale
+      const { data: currentOrder, error: orderError } = await supabase
+        .from('orders')
+        .select('quantity, plan_id, status')
+        .eq('id', orderId)
+        .single();
+
+      if (orderError) {
+        throw new Error('Ordine non trovato');
+      }
+
+      // Prepara i dati per l'aggiornamento
+      const updateData: Record<string, any> = {};
+      
+      // Aggiorna solo i campi forniti
+      if (orderData.status !== undefined) updateData.status = orderData.status;
+      if (orderData.deliveryDate !== undefined) updateData.delivery_date = orderData.deliveryDate;
+      if (orderData.pickupPointId !== undefined) updateData.pickup_point_id = orderData.pickupPointId;
+      if (orderData.notes !== undefined) updateData.notes = orderData.notes;
+
+      // Se la quantità cambia, aggiorna la disponibilità del piano
+      if (orderData.quantity !== undefined && orderData.quantity !== currentOrder.quantity) {
+        // Calcola la differenza di porzioni
+        const delta = currentOrder.quantity - orderData.quantity;
+        
+        // Aggiorna la disponibilità del piano
+        await subscriptionsDb.updateAvailablePortions(currentOrder.plan_id, delta);
+        
+        updateData.quantity = orderData.quantity;
+      }
+
+      // Se lo stato cambia a "canceled", restituiamo le porzioni
+      if (orderData.status === 'canceled' && currentOrder.status !== 'canceled') {
+        await subscriptionsDb.updateAvailablePortions(currentOrder.plan_id, currentOrder.quantity);
+      }
+
+      // Aggiorna l'ordine
+      const { data: updatedOrder, error: updateError } = await supabase
+        .from('orders')
+        .update(updateData)
+        .eq('id', orderId)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+
+      return updatedOrder;
+    } catch (error) {
+      logger.error(`Error updating order with ID ${orderId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Dona un ordine a una ONLUS
+   * @param orderId ID dell'ordine
+   * @param donationData Dati della donazione
+   * @returns Ordine aggiornato
+   */
+  async donateOrder(orderId: string, donationData: DonateOrder) {
+    try {
+      // Verifica che l'ONLUS esista
+      const { data: onlus, error: onlusError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', donationData.donatedTo)
+        .eq('user_type', 'onlus')
+        .single();
+
+      if (onlusError) {
+        throw new Error('ONLUS non trovata');
+      }
+
+      // Aggiorna l'ordine
+      const { data: updatedOrder, error: updateError } = await supabase
+        .from('orders')
+        .update({
+          status: 'donated',
+          donated_to: donationData.donatedTo,
+          donation_date: new Date().toISOString()
+        })
+        .eq('id', orderId)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+
+      return updatedOrder;
+    } catch (error) {
+      logger.error(`Error donating order with ID ${orderId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene gli ordini imminenti (entro un certo numero di giorni)
+   * @param userId ID dell'utente
+   * @param days Numero di giorni (default: 3)
+   * @returns Lista degli ordini imminenti
+   */
+  async getUpcomingOrders(userId: string, days: number = 3) {
+    try {
+      // Calcola la data limite
+      const now = new Date();
+      const limit = new Date();
+      limit.setDate(now.getDate() + days);
+
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          subscription_plans:plan_id (
+            title,
+            discounted_price,
+            original_price,
+            restaurant_id,
+            restaurants:restaurant_id (
+              name,
+              business_name
+            )
+          ),
+          pickup_points:pickup_point_id (
+            name,
+            address
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .gte('delivery_date', now.toISOString())
+        .lte('delivery_date', limit.toISOString())
+        .order('delivery_date', { ascending: true });
+
+      if (error) throw error;
+
+      // Formatta i dati
+      return data.map(order => ({
+        ...order,
+        planTitle: order.subscription_plans?.title || 'Piano sconosciuto',
+        restaurantName: order.subscription_plans?.restaurants?.business_name || 
+                        order.subscription_plans?.restaurants?.name || 
+                        'Ristorante sconosciuto',
+        pickupLocationName: order.pickup_points?.name || 'Punto di ritiro sconosciuto',
+        pickupAddress: order.pickup_points?.address || '',
+        originalPrice: order.subscription_plans?.original_price || 0,
+        discountedPrice: order.subscription_plans?.discounted_price || 0,
+        totalPrice: (order.subscription_plans?.discounted_price || 0) * order.quantity,
+        // Pulizia
+        subscription_plans: undefined,
+        pickup_points: undefined
+      }));
+    } catch (error) {
+      logger.error(`Error getting upcoming orders for user ${userId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene gli ordini filtrati per stato
+   * @param userId ID dell'utente
+   * @param status Stato degli ordini
+   * @returns Lista degli ordini filtrati
+   */
+  async getOrdersByStatus(userId: string, status: string) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          subscription_plans:plan_id (
+            title,
+            discounted_price,
+            original_price,
+            restaurant_id,
+            restaurants:restaurant_id (
+              name,
+              business_name
+            )
+          ),
+          pickup_points:pickup_point_id (
+            name,
+            address
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('status', status)
+        .order('delivery_date', { ascending: true });
+
+      if (error) throw error;
+
+      // Formatta i dati
+      return data.map(order => ({
+        ...order,
+        planTitle: order.subscription_plans?.title || 'Piano sconosciuto',
+        restaurantName: order.subscription_plans?.restaurants?.business_name || 
+                        order.subscription_plans?.restaurants?.name || 
+                        'Ristorante sconosciuto',
+        pickupLocationName: order.pickup_points?.name || 'Punto di ritiro sconosciuto',
+        pickupAddress: order.pickup_points?.address || '',
+        originalPrice: order.subscription_plans?.original_price || 0,
+        discountedPrice: order.subscription_plans?.discounted_price || 0,
+        totalPrice: (order.subscription_plans?.discounted_price || 0) * order.quantity,
+        // Pulizia
+        subscription_plans: undefined,
+        pickup_points: undefined
+      }));
+    } catch (error) {
+      logger.error(`Error getting orders with status ${status} for user ${userId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene le statistiche degli ordini per un ristorante
+   * @param restaurantId ID del ristorante
+   * @returns Statistiche degli ordini
+   */
+  async getOrderStatsByRestaurant(restaurantId: string) {
+    try {
+      // Ottiene tutti gli ordini per piani di questo ristorante
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          subscription_plans:plan_id (
+            title,
+            discounted_price
+          )
+        `)
+        .eq('subscription_plans.restaurant_id', restaurantId);
+
+      if (error) throw error;
+
+      // Calcola le statistiche
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(todayStart);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const totalOrders = data.length;
+      const completedOrders = data.filter(order => order.status === 'completed').length;
+      const canceledOrders = data.filter(order => order.status === 'canceled').length;
+      const donatedOrders = data.filter(order => order.status === 'donated').length;
+      const ordersToday = data.filter(order => new Date(order.created_at) >= todayStart).length;
+      const ordersThisWeek = data.filter(order => new Date(order.created_at) >= weekStart).length;
+      const ordersThisMonth = data.filter(order => new Date(order.created_at) >= monthStart).length;
+
+      // Calcola il totale delle entrate
+      const totalRevenue = data
+        .filter(order => order.status === 'completed' || order.status === 'pending')
+        .reduce((sum, order) => {
+          const price = order.subscription_plans?.discounted_price || 0;
+          return sum + price * order.quantity;
+        }, 0);
+
+      // Calcola il valore medio degli ordini
+      const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+      // Trova il piano più popolare
+      const planCounts: Record<string, { id: string; title: string; count: number }> = {};
+      data.forEach(order => {
+        const planId = order.plan_id;
+        const planTitle = order.subscription_plans?.title || 'Piano sconosciuto';
+        
+        if (!planCounts[planId]) {
+          planCounts[planId] = { id: planId, title: planTitle, count: 0 };
+        }
+        
+        planCounts[planId].count++;
+      });
+
+      const planCountArray = Object.values(planCounts);
+      const mostPopularPlan = planCountArray.length > 0
+        ? planCountArray.reduce((max, curr) => curr.count > max.count ? curr : max, planCountArray[0])
+        : undefined;
+
+      return {
+        totalOrders,
+        completedOrders,
+        canceledOrders,
+        donatedOrders,
+        ordersToday,
+        ordersThisWeek,
+        ordersThisMonth,
+        totalRevenue,
+        averageOrderValue,
+        mostPopularPlan: mostPopularPlan
+          ? {
+              id: mostPopularPlan.id,
+              title: mostPopularPlan.title,
+              orderCount: mostPopularPlan.count
+            }
+          : undefined
+      };
+    } catch (error) {
+      logger.error(`Error getting order statistics for restaurant ${restaurantId}`, error);
+      throw error;
+    }
+  }
+}
+
+export default new OrdersDb();

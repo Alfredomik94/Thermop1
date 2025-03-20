@@ -1,0 +1,337 @@
+import { Request, Response } from 'express';
+import { z } from 'zod';
+import { supabase } from '../utils/supabase';
+import { createRatingSchema, updateRatingSchema } from '../../shared/schema/rating-schema';
+import { NotificationService } from '../services/notification-service';
+
+/**
+ * Controller per la gestione delle valutazioni (ratings)
+ */
+export class RatingController {
+  /**
+   * Ottiene tutte le valutazioni per un piano specifico
+   */
+  async getRatingsByPlan(req: Request, res: Response) {
+    try {
+      const planId = req.params.planId;
+
+      // Verifica che planId sia valido
+      if (!planId) {
+        return res.status(400).json({ message: 'ID del piano mancante' });
+      }
+
+      const { data, error } = await supabase
+        .from('ratings')
+        .select(`
+          *,
+          users:userId (name, userType)
+        `)
+        .eq('planId', planId)
+        .order('createdAt', { ascending: false });
+
+      if (error) throw error;
+
+      // Formatta i dati per la risposta
+      const formattedData = data.map(item => ({
+        ...item,
+        userName: item.users?.name || 'Utente anonimo',
+        userType: item.users?.userType || 'customer'
+      }));
+
+      res.json(formattedData);
+    } catch (error) {
+      console.error('Errore nel recupero delle valutazioni:', error);
+      res.status(500).json({ message: 'Errore nel recupero delle valutazioni' });
+    }
+  }
+
+  /**
+   * Ottiene tutte le valutazioni date da un utente specifico
+   */
+  async getRatingsByUser(req: Request, res: Response) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      const { data, error } = await supabase
+        .from('ratings')
+        .select(`
+          *,
+          subscription_plans:planId (title, restaurantId),
+          restaurants:subscription_plans(restaurantId) (businessName)
+        `)
+        .eq('userId', userId)
+        .order('createdAt', { ascending: false });
+
+      if (error) throw error;
+
+      // Formatta i dati per la risposta
+      const formattedData = data.map(item => ({
+        ...item,
+        planTitle: item.subscription_plans?.title || 'Piano sconosciuto',
+        restaurantName: item.restaurants?.businessName || 'Ristorante sconosciuto'
+      }));
+
+      res.json(formattedData);
+    } catch (error) {
+      console.error('Errore nel recupero delle valutazioni:', error);
+      res.status(500).json({ message: 'Errore nel recupero delle valutazioni dell\'utente' });
+    }
+  }
+
+  /**
+   * Crea una nuova valutazione
+   */
+  async createRating(req: Request, res: Response) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      // Valida i dati di input
+      const validationResult = createRatingSchema.safeParse({
+        ...req.body,
+        userId
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Dati non validi', 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const ratingData = validationResult.data;
+
+      // Verifica che l'utente non abbia già valutato questo piano
+      const { data: existingRating, error: checkError } = await supabase
+        .from('ratings')
+        .select('id')
+        .eq('userId', userId)
+        .eq('planId', ratingData.planId)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingRating) {
+        return res.status(400).json({ 
+          message: 'Hai già valutato questo piano',
+          existingRatingId: existingRating.id
+        });
+      }
+
+      // Crea la valutazione
+      const { data, error } = await supabase
+        .from('ratings')
+        .insert({
+          ...ratingData,
+          createdAt: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Ottieni informazioni sul piano e sull'utente per le notifiche
+      const { data: planData, error: planError } = await supabase
+        .from('subscription_plans')
+        .select(`
+          title,
+          restaurantId
+        `)
+        .eq('id', ratingData.planId)
+        .single();
+
+      if (planError) throw planError;
+
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', userId)
+        .single();
+
+      if (userError) throw userError;
+
+      // Invia notifica al ristorante
+      await NotificationService.createNotification({
+        userId: planData.restaurantId,
+        type: 'RATING_RECEIVED',
+        title: 'Nuova valutazione ricevuta',
+        message: `${userData.name} ha valutato il tuo piano "${planData.title}" con ${ratingData.rating} stelle.`,
+        data: {
+          ratingId: data.id,
+          planId: ratingData.planId,
+          rating: ratingData.rating
+        }
+      });
+
+      res.status(201).json(data);
+    } catch (error) {
+      console.error('Errore nella creazione della valutazione:', error);
+      res.status(500).json({ message: 'Errore nella creazione della valutazione' });
+    }
+  }
+
+  /**
+   * Aggiorna una valutazione esistente
+   */
+  async updateRating(req: Request, res: Response) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      const ratingId = req.params.ratingId;
+      if (!ratingId) {
+        return res.status(400).json({ message: 'ID della valutazione mancante' });
+      }
+
+      // Valida i dati di input
+      const validationResult = updateRatingSchema.safeParse({
+        ...req.body,
+        id: ratingId
+      });
+
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Dati non validi', 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const ratingData = validationResult.data;
+
+      // Verifica che la valutazione esista e appartenga all'utente
+      const { data: existingRating, error: checkError } = await supabase
+        .from('ratings')
+        .select('*')
+        .eq('id', ratingId)
+        .eq('userId', userId)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (!existingRating) {
+        return res.status(404).json({ message: 'Valutazione non trovata o non autorizzata' });
+      }
+
+      // Aggiorna la valutazione
+      const { data, error } = await supabase
+        .from('ratings')
+        .update({
+          rating: ratingData.rating,
+          comment: ratingData.comment
+        })
+        .eq('id', ratingId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json(data);
+    } catch (error) {
+      console.error('Errore nell\'aggiornamento della valutazione:', error);
+      res.status(500).json({ message: 'Errore nell\'aggiornamento della valutazione' });
+    }
+  }
+
+  /**
+   * Elimina una valutazione
+   */
+  async deleteRating(req: Request, res: Response) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      const ratingId = req.params.ratingId;
+      if (!ratingId) {
+        return res.status(400).json({ message: 'ID della valutazione mancante' });
+      }
+
+      // Verifica che la valutazione esista e appartenga all'utente
+      const { data: existingRating, error: checkError } = await supabase
+        .from('ratings')
+        .select('*')
+        .eq('id', ratingId)
+        .eq('userId', userId)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (!existingRating) {
+        return res.status(404).json({ message: 'Valutazione non trovata o non autorizzata' });
+      }
+
+      // Elimina la valutazione
+      const { error } = await supabase
+        .from('ratings')
+        .delete()
+        .eq('id', ratingId);
+
+      if (error) throw error;
+
+      res.status(204).send();
+    } catch (error) {
+      console.error('Errore nell\'eliminazione della valutazione:', error);
+      res.status(500).json({ message: 'Errore nell\'eliminazione della valutazione' });
+    }
+  }
+
+  /**
+   * Ottiene le statistiche delle valutazioni per un piano
+   */
+  async getRatingStats(req: Request, res: Response) {
+    try {
+      const planId = req.params.planId;
+
+      // Verifica che planId sia valido
+      if (!planId) {
+        return res.status(400).json({ message: 'ID del piano mancante' });
+      }
+
+      const { data, error } = await supabase
+        .from('ratings')
+        .select('rating')
+        .eq('planId', planId);
+
+      if (error) throw error;
+
+      // Calcola la media dei rating
+      const ratingsCount = data.length;
+      const averageRating = ratingsCount > 0
+        ? data.reduce((sum, item) => sum + item.rating, 0) / ratingsCount
+        : 0;
+
+      // Calcola la distribuzione per rating (1-5)
+      const distribution: Record<string, number> = {
+        '1': 0, '2': 0, '3': 0, '4': 0, '5': 0
+      };
+
+      data.forEach(item => {
+        distribution[item.rating.toString()]++;
+      });
+
+      res.json({
+        planId,
+        averageRating,
+        ratingsCount,
+        distributionByRating: distribution
+      });
+    } catch (error) {
+      console.error('Errore nel recupero delle statistiche:', error);
+      res.status(500).json({ message: 'Errore nel recupero delle statistiche delle valutazioni' });
+    }
+  }
+}
+
+export default new RatingController();

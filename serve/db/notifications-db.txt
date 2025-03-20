@@ -1,0 +1,363 @@
+/**
+ * Servizio di accesso al database per la gestione delle notifiche
+ */
+import { supabase } from './supabase-client';
+import { 
+  Notification, 
+  CreateNotification, 
+  UpdateNotification,
+  NotificationStats
+} from '../../shared/schema/notification-schema';
+import { logger } from '../utils/logger';
+
+/**
+ * Classe per le operazioni relative alle notifiche
+ */
+export class NotificationsDb {
+  /**
+   * Ottiene tutte le notifiche di un utente
+   * @param userId ID dell'utente
+   * @param limit Numero massimo di notifiche da recuperare
+   * @param onlyUnread Se recuperare solo le notifiche non lette
+   * @returns Lista delle notifiche
+   */
+  async getNotificationsByUserId(
+    userId: string, 
+    limit: number = 50, 
+    onlyUnread: boolean = false
+  ): Promise<Notification[]> {
+    try {
+      let query = supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      
+      if (onlyUnread) {
+        query = query.eq('read', false);
+      }
+      
+      if (limit > 0) {
+        query = query.limit(limit);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Converti le chiavi da snake_case a camelCase
+      return data.map(notification => ({
+        id: notification.id,
+        userId: notification.user_id,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        read: notification.read,
+        createdAt: notification.created_at,
+        data: notification.data
+      }));
+    } catch (error) {
+      logger.error(`Error getting notifications for user ${userId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene una notifica specifica
+   * @param notificationId ID della notifica
+   * @returns Dettagli della notifica
+   */
+  async getNotificationById(notificationId: string): Promise<Notification | null> {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('id', notificationId)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') { // Record non trovato
+          return null;
+        }
+        throw error;
+      }
+
+      // Converti le chiavi da snake_case a camelCase
+      return {
+        id: data.id,
+        userId: data.user_id,
+        type: data.type,
+        title: data.title,
+        message: data.message,
+        read: data.read,
+        createdAt: data.created_at,
+        data: data.data
+      };
+    } catch (error) {
+      logger.error(`Error getting notification with ID ${notificationId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Crea una nuova notifica
+   * @param notificationData Dati della notifica
+   * @returns Notifica creata
+   */
+  async createNotification(notificationData: CreateNotification): Promise<Notification> {
+    try {
+      // Converti le chiavi da camelCase a snake_case
+      const dbData = {
+        user_id: notificationData.userId,
+        type: notificationData.type,
+        title: notificationData.title,
+        message: notificationData.message,
+        read: false,
+        data: notificationData.data || {},
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .insert(dbData)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      // Converti le chiavi da snake_case a camelCase
+      return {
+        id: data.id,
+        userId: data.user_id,
+        type: data.type,
+        title: data.title,
+        message: data.message,
+        read: data.read,
+        createdAt: data.created_at,
+        data: data.data
+      };
+    } catch (error) {
+      logger.error('Error creating notification', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Crea più notifiche in un'unica operazione
+   * @param notificationsData Array di dati per le notifiche
+   * @returns Notifiche create
+   */
+  async createNotificationsBatch(notificationsData: CreateNotification[]): Promise<number> {
+    try {
+      if (notificationsData.length === 0) {
+        return 0;
+      }
+
+      // Converti le chiavi da camelCase a snake_case
+      const dbData = notificationsData.map(notification => ({
+        user_id: notification.userId,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        read: false,
+        data: notification.data || {},
+        created_at: new Date().toISOString()
+      }));
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .insert(dbData)
+        .select('id');
+
+      if (error) throw error;
+
+      return data.length;
+    } catch (error) {
+      logger.error('Error creating notifications batch', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Segna una notifica come letta
+   * @param notificationId ID della notifica
+   * @param userId ID dell'utente (per verifica di proprietà)
+   * @returns Notifica aggiornata
+   */
+  async markAsRead(notificationId: string, userId: string): Promise<Notification> {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', notificationId)
+        .eq('user_id', userId)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      // Converti le chiavi da snake_case a camelCase
+      return {
+        id: data.id,
+        userId: data.user_id,
+        type: data.type,
+        title: data.title,
+        message: data.message,
+        read: data.read,
+        createdAt: data.created_at,
+        data: data.data
+      };
+    } catch (error) {
+      logger.error(`Error marking notification ${notificationId} as read`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Segna tutte le notifiche di un utente come lette
+   * @param userId ID dell'utente
+   * @returns Numero di notifiche aggiornate
+   */
+  async markAllAsRead(userId: string): Promise<number> {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', userId)
+        .eq('read', false)
+        .select('id');
+
+      if (error) throw error;
+
+      return data.length;
+    } catch (error) {
+      logger.error(`Error marking all notifications as read for user ${userId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Elimina una notifica
+   * @param notificationId ID della notifica
+   * @param userId ID dell'utente (per verifica di proprietà)
+   */
+  async deleteNotification(notificationId: string, userId: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('id', notificationId)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error(`Error deleting notification ${notificationId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Elimina le notifiche vecchie di un utente
+   * @param userId ID dell'utente
+   * @param olderThan Data limite (notifiche precedenti a questa saranno eliminate)
+   * @returns Numero di notifiche eliminate
+   */
+  async deleteOldNotifications(
+    userId: string, 
+    olderThan: Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // 30 giorni fa di default
+  ): Promise<number> {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', userId)
+        .lt('created_at', olderThan.toISOString())
+        .select('id');
+
+      if (error) throw error;
+
+      return data.length;
+    } catch (error) {
+      logger.error(`Error deleting old notifications for user ${userId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ottiene le statistiche delle notifiche per un utente
+   * @param userId ID dell'utente
+   * @returns Statistiche delle notifiche
+   */
+  async getNotificationStats(userId: string): Promise<NotificationStats> {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('type, read')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      const totalCount = data.length;
+      const unreadCount = data.filter(item => !item.read).length;
+
+      // Conteggio per tipo
+      const countByType: Record<string, number> = {};
+      data.forEach(item => {
+        const type = item.type;
+        countByType[type] = (countByType[type] || 0) + 1;
+      });
+
+      return {
+        userId,
+        totalCount,
+        unreadCount,
+        countByType
+      };
+    } catch (error) {
+      logger.error(`Error getting notification stats for user ${userId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Imposta il listener per le notifiche in tempo reale
+   * @param userId ID dell'utente
+   * @param callback Funzione da chiamare quando arriva una nuova notifica
+   */
+  setupRealtimeListener(userId: string, callback: (notification: Notification) => void) {
+    const subscription = supabase
+      .channel('notifications-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          // Converti le chiavi da snake_case a camelCase
+          const notification: Notification = {
+            id: payload.new.id,
+            userId: payload.new.user_id,
+            type: payload.new.type,
+            title: payload.new.title,
+            message: payload.new.message,
+            read: payload.new.read,
+            createdAt: payload.new.created_at,
+            data: payload.new.data
+          };
+          
+          callback(notification);
+        }
+      )
+      .subscribe();
+
+    // Restituisce una funzione per rimuovere il listener
+    return () => {
+      subscription.unsubscribe();
+    };
+  }
+}
+
+export default new NotificationsDb();

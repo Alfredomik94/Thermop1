@@ -1,0 +1,605 @@
+/**
+ * Controller per la gestione degli utenti
+ */
+import { Request, Response, NextFunction } from 'express';
+import { supabase } from '../utils/supabase';
+import { createAppError } from '../utils/error-handler';
+import { updateUserSchema } from '../../shared/schema/user-schema';
+import { logger } from '../utils/logger';
+
+/**
+ * Controller per la gestione degli utenti
+ */
+export class UserController {
+  /**
+   * Ottiene il profilo dell'utente corrente
+   */
+  async getCurrentUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      // Ottiene i dettagli dell'utente da Supabase
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*, pickup_points(id, name, address)')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+
+      if (!user) {
+        return res.status(404).json({ message: 'Utente non trovato' });
+      }
+
+      // Rimuove la password (per sicurezza)
+      const { password, ...userWithoutPassword } = user;
+
+      res.json(userWithoutPassword);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Aggiorna il profilo dell'utente corrente
+   */
+  async updateCurrentUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      // Valida i dati di input
+      const validationResult = updateUserSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return next(
+          createAppError('Dati di input non validi', 400, {
+            code: 'VALIDATION_ERROR',
+            errors: validationResult.error.flatten().fieldErrors,
+          })
+        );
+      }
+
+      const updateData = validationResult.data;
+
+      // Aggiorna l'utente in Supabase
+      const { data: updatedUser, error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', userId)
+        .select('*, pickup_points(id, name, address)')
+        .single();
+
+      if (error) throw error;
+
+      // Rimuove la password (per sicurezza)
+      const { password, ...userWithoutPassword } = updatedUser;
+
+      res.json(userWithoutPassword);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Aggiunge un ristorante ai preferiti dell'utente
+   */
+  async addFavoriteRestaurant(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      const { restaurantId } = req.params;
+      if (!restaurantId) {
+        return res.status(400).json({ message: 'ID ristorante mancante' });
+      }
+
+      // Verifica che l'utente sia un cliente
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('user_type, favorite_restaurants')
+        .eq('id', userId)
+        .single();
+
+      if (userError) throw userError;
+
+      if (user.user_type !== 'customer') {
+        return res.status(403).json({
+          message: 'Solo i clienti possono aggiungere ristoranti ai preferiti',
+        });
+      }
+
+      // Verifica che il ristorante esista
+      const { data: restaurant, error: restaurantError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', restaurantId)
+        .eq('user_type', 'tavola_calda')
+        .single();
+
+      if (restaurantError) {
+        return res.status(404).json({ message: 'Ristorante non trovato' });
+      }
+
+      // Aggiorna l'array dei ristoranti preferiti
+      const currentFavorites = user.favorite_restaurants || [];
+
+      // Se il ristorante è già nei preferiti, non fare nulla
+      if (currentFavorites.includes(restaurantId)) {
+        return res.json({
+          message: 'Il ristorante è già nei preferiti',
+          favoriteRestaurants: currentFavorites,
+        });
+      }
+
+      const updatedFavorites = [...currentFavorites, restaurantId];
+
+      // Aggiorna l'utente
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ favorite_restaurants: updatedFavorites })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      res.json({
+        message: 'Ristorante aggiunto ai preferiti',
+        favoriteRestaurants: updatedFavorites,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Rimuove un ristorante dai preferiti dell'utente
+   */
+  async removeFavoriteRestaurant(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      const { restaurantId } = req.params;
+      if (!restaurantId) {
+        return res.status(400).json({ message: 'ID ristorante mancante' });
+      }
+
+      // Ottiene l'array corrente dei preferiti
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('favorite_restaurants')
+        .eq('id', userId)
+        .single();
+
+      if (userError) throw userError;
+
+      const currentFavorites = user.favorite_restaurants || [];
+
+      // Rimuovi il ristorante dall'array
+      const updatedFavorites = currentFavorites.filter(id => id !== restaurantId);
+
+      // Se il ristorante non era nei preferiti, non fare nulla
+      if (currentFavorites.length === updatedFavorites.length) {
+        return res.json({
+          message: 'Il ristorante non è nei preferiti',
+          favoriteRestaurants: currentFavorites,
+        });
+      }
+
+      // Aggiorna l'utente
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ favorite_restaurants: updatedFavorites })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      res.json({
+        message: 'Ristorante rimosso dai preferiti',
+        favoriteRestaurants: updatedFavorites,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Ottiene i ristoranti preferiti dell'utente
+   */
+  async getFavoriteRestaurants(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      // Ottiene l'array dei preferiti
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('favorite_restaurants')
+        .eq('id', userId)
+        .single();
+
+      if (userError) throw userError;
+
+      const favoriteIds = user.favorite_restaurants || [];
+
+      // Se non ci sono preferiti, restituisci un array vuoto
+      if (favoriteIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Ottiene i dettagli dei ristoranti preferiti
+      const { data: restaurants, error: restaurantsError } = await supabase
+        .from('users')
+        .select('id, name, business_name, business_type, address, description, profile_image_url')
+        .in('id', favoriteIds)
+        .eq('user_type', 'tavola_calda');
+
+      if (restaurantsError) throw restaurantsError;
+
+      res.json(restaurants);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Imposta il punto di ritiro preferito dell'utente
+   */
+  async setPreferredPickupPoint(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Verifica che l'utente sia autenticato
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Non autorizzato' });
+      }
+
+      const { pickupPointId } = req.params;
+      if (!pickupPointId) {
+        return res.status(400).json({ message: 'ID punto di ritiro mancante' });
+      }
+
+      // Verifica che il punto di ritiro esista
+      const { data: pickupPoint, error: pickupError } = await supabase
+        .from('pickup_points')
+        .select('id')
+        .eq('id', pickupPointId)
+        .single();
+
+      if (pickupError) {
+        return res.status(404).json({ message: 'Punto di ritiro non trovato' });
+      }
+
+      // Aggiorna l'utente
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ preferred_pickup_point: pickupPointId })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      res.json({
+        message: 'Punto di ritiro preferito aggiornato',
+        preferredPickupPoint: pickupPointId,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Ottiene i dettagli di un ristorante
+   */
+  async getRestaurantDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { restaurantId } = req.params;
+      if (!restaurantId) {
+        return res.status(400).json({ message: 'ID ristorante mancante' });
+      }
+
+      // Ottiene i dettagli del ristorante
+      const { data, error } = await supabase
+        .from('users')
+        .select(`
+          id, 
+          name, 
+          business_name, 
+          business_type, 
+          address, 
+          description, 
+          profile_image_url,
+          pickup_points(*)
+        `)
+        .eq('id', restaurantId)
+        .eq('user_type', 'tavola_calda')
+        .single();
+
+      if (error) {
+        return res.status(404).json({ message: 'Ristorante non trovato' });
+      }
+
+      // Cerca i piani di abbonamento attivi del ristorante
+      const { data: plans, error: plansError } = await supabase
+        .from('subscription_plans')
+        .select(`
+          id, 
+          title, 
+          description, 
+          original_price, 
+          discounted_price,
+          pickup_time_start,
+          pickup_time_end,
+          tags,
+          available_portions,
+          active
+        `)
+        .eq('restaurant_id', restaurantId)
+        .eq('active', true)
+        .order('created_at', { ascending: false });
+
+      if (plansError) throw plansError;
+
+      // Calcola la valutazione media del ristorante
+      const { data: ratings, error: ratingsError } = await supabase
+        .from('ratings')
+        .select('rating')
+        .in('plan_id', plans.map((plan) => plan.id));
+
+      if (ratingsError) throw ratingsError;
+
+      const averageRating =
+        ratings.length > 0
+          ? ratings.reduce((sum, { rating }) => sum + rating, 0) / ratings.length
+          : 0;
+
+      res.json({
+        ...data,
+        activePlans: plans.length,
+        averageRating,
+        ratingsCount: ratings.length,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Cerca ristoranti per criteri vari
+   */
+  async searchRestaurants(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Parametri di query
+      const {
+        query = '',
+        cuisineType,
+        lat,
+        lng,
+        radius = 5,
+        page = 1,
+        limit = 10,
+      } = req.query;
+
+      let query_builder = supabase
+        .from('users')
+        .select(
+          `
+          id, 
+          name, 
+          business_name, 
+          business_type, 
+          address, 
+          description, 
+          profile_image_url
+        `,
+          { count: 'exact' }
+        )
+        .eq('user_type', 'tavola_calda');
+
+      // Filtro per nome o descrizione
+      if (query) {
+        query_builder = query_builder.or(
+          `business_name.ilike.%${query}%,description.ilike.%${query}%`
+        );
+      }
+
+      // Filtro per tipo di cucina
+      if (cuisineType && cuisineType !== 'Tutti') {
+        query_builder = query_builder.eq('business_type', cuisineType);
+      }
+
+      // Paginazione
+      const from = (Number(page) - 1) * Number(limit);
+      const to = from + Number(limit) - 1;
+      query_builder = query_builder.range(from, to);
+
+      // Esegui la query
+      const { data, error, count } = await query_builder;
+
+      if (error) throw error;
+
+      // Se ci sono coordinate, calcola le distanze
+      let restaurantsWithDistance = data;
+      if (lat && lng) {
+        // Nota: in un'implementazione reale, calcoleremmo la distanza a livello di database
+        // Qui la simuliamo con una funzione semplice
+        const userLat = Number(lat);
+        const userLng = Number(lng);
+        
+        // Ottieni coordinate dei ristoranti dalla tabella pickup_points
+        const { data: pickupPoints, error: pickupError } = await supabase
+          .from('pickup_points')
+          .select('restaurant_id, latitude, longitude')
+          .in('restaurant_id', data.map((r) => r.id));
+
+        if (pickupError) throw pickupError;
+
+        // Mappa dei punti di ritiro per ristorante
+        const restaurantPickups = pickupPoints.reduce((acc, point) => {
+          if (!acc[point.restaurant_id]) {
+            acc[point.restaurant_id] = [];
+          }
+          acc[point.restaurant_id].push(point);
+          return acc;
+        }, {});
+
+        // Calcola la distanza più breve per ogni ristorante
+        restaurantsWithDistance = data.map((restaurant) => {
+          const pickups = restaurantPickups[restaurant.id] || [];
+          
+          if (pickups.length === 0) {
+            return { ...restaurant, distance: null };
+          }
+
+          // Calcola la distanza minima tra i punti di ritiro
+          const minDistance = pickups.reduce((min, point) => {
+            const dist = calculateDistance(
+              userLat,
+              userLng,
+              point.latitude,
+              point.longitude
+            );
+            return dist < min ? dist : min;
+          }, Number.MAX_VALUE);
+
+          return { ...restaurant, distance: minDistance };
+        });
+
+        // Filtra per raggio se necessario
+        if (radius) {
+          restaurantsWithDistance = restaurantsWithDistance.filter(
+            (r) => r.distance === null || r.distance <= Number(radius)
+          );
+        }
+
+        // Ordina per distanza
+        restaurantsWithDistance.sort((a, b) => {
+          if (a.distance === null) return 1;
+          if (b.distance === null) return -1;
+          return a.distance - b.distance;
+        });
+      }
+
+      res.json({
+        data: restaurantsWithDistance,
+        pagination: {
+          total: count || 0,
+          page: Number(page),
+          limit: Number(limit),
+          pages: count ? Math.ceil(count / Number(limit)) : 0,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Ottiene i ristoranti più vicini
+   */
+  async getNearbyRestaurants(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { lat, lng, radius = 5, limit = 10 } = req.query;
+
+      if (!lat || !lng) {
+        return res.status(400).json({
+          message: 'Coordinate di geolocalizzazione mancanti (lat, lng)',
+        });
+      }
+
+      // In un'implementazione reale, useremmo una query spaziale
+      // Qui simulo solo i risultati
+      const { data: pickupPoints, error } = await supabase
+        .from('pickup_points')
+        .select('restaurant_id, name, address, latitude, longitude');
+
+      if (error) throw error;
+
+      // Calcola la distanza per ogni punto di ritiro
+      const userLat = Number(lat);
+      const userLng = Number(lng);
+      const maxRadius = Number(radius);
+
+      const pointsWithDistance = pickupPoints.map((point) => ({
+        ...point,
+        distance: calculateDistance(
+          userLat,
+          userLng,
+          point.latitude,
+          point.longitude
+        ),
+      }));
+
+      // Filtra per distanza massima
+      const nearbyPoints = pointsWithDistance
+        .filter((point) => point.distance <= maxRadius)
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, Number(limit));
+
+      // Ottieni i dettagli dei ristoranti
+      const restaurantIds = [...new Set(nearbyPoints.map((p) => p.restaurant_id))];
+
+      const { data: restaurants, error: restaurantError } = await supabase
+        .from('users')
+        .select('id, name, business_name, business_type, address, description, profile_image_url')
+        .in('id', restaurantIds)
+        .eq('user_type', 'tavola_calda');
+
+      if (restaurantError) throw restaurantError;
+
+      // Combina i dati
+      const result = restaurantIds.map((id) => {
+        const restaurant = restaurants.find((r) => r.id === id);
+        const nearestPoint = nearbyPoints
+          .filter((p) => p.restaurant_id === id)
+          .sort((a, b) => a.distance - b.distance)[0];
+
+        return {
+          ...restaurant,
+          pickupPoint: {
+            id: nearestPoint.id,
+            name: nearestPoint.name,
+            address: nearestPoint.address,
+          },
+          distance: nearestPoint.distance,
+        };
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+/**
+ * Calcola la distanza tra due coordinate in km (formula approssimata di Haversine)
+ */
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Raggio terrestre in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distanza in km
+}
+
+export default new UserController();

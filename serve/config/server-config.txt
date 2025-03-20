@@ -1,0 +1,474 @@
+// server/index.ts
+import express, { Request, Response, NextFunction } from 'express';
+import path from 'path';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import morgan from 'morgan';
+import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
+import sessionMiddleware from './config/session-config';
+import { errorMiddleware } from './middleware/error-middleware';
+import authRoutes from './routes/auth-routes';
+import userRoutes from './routes/user-routes';
+import subscriptionRoutes from './routes/subscription-routes';
+import orderRoutes from './routes/order-routes';
+import pickupRoutes from './routes/pickup-routes';
+import notificationRoutes from './routes/notification-routes';
+import ratingRoutes from './routes/rating-routes';
+
+// Carica le variabili d'ambiente
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middlewares
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? 'https://thermopolio.com' 
+    : 'http://localhost:5173',
+  credentials: true
+}));
+app.use(helmet());
+app.use(compression());
+app.use(morgan('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use(sessionMiddleware);
+
+// Configurazione delle rotte API
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/pickup-points', pickupRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/ratings', ratingRoutes);
+
+// Servire file statici in produzione
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/dist')));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+  });
+}
+
+// Middleware per la gestione degli errori
+app.use(errorMiddleware);
+
+// Gestione delle rotte non trovate
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.status(404).json({ message: 'Risorsa non trovata' });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server in esecuzione sulla porta ${PORT}`);
+  console.log(`Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Connesso a Supabase: ${process.env.SUPABASE_URL ? 'Sì' : 'No'}`);
+});
+
+// server/middleware/auth-middleware.ts
+import { Request, Response, NextFunction } from 'express';
+import * as usersDb from '../db/users-db';
+
+declare module 'express-session' {
+  interface SessionData {
+    userId: number;
+    user: any;
+  }
+}
+
+export const authMiddleware = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Verifica se l'utente è autenticato (ha un userId in sessione)
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato. Effettua il login.' });
+    }
+
+    // Se abbiamo già i dati dell'utente in sessione, li riutilizziamo
+    if (!req.session.user) {
+      // Altrimenti li recuperiamo dal database
+      const user = await usersDb.getUserById(req.session.userId);
+      
+      if (!user) {
+        // Se l'utente non esiste più, cancella la sessione
+        req.session.destroy((err) => {
+          if (err) console.error('Errore nella distruzione della sessione:', err);
+        });
+        return res.status(401).json({ message: 'Sessione non valida. Effettua nuovamente il login.' });
+      }
+      
+      // Memorizza l'utente nella sessione per riutilizzarlo
+      req.session.user = user;
+    }
+
+    next();
+  } catch (error) {
+    console.error('Errore nel middleware di autenticazione:', error);
+    res.status(500).json({ message: 'Errore del server' });
+  }
+};
+
+// server/middleware/error-middleware.ts
+import { Request, Response, NextFunction } from 'express';
+
+interface CustomError extends Error {
+  statusCode?: number;
+}
+
+export const errorMiddleware = (
+  err: CustomError,
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  console.error('Errore:', err);
+  
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Si è verificato un errore interno del server';
+  
+  res.status(statusCode).json({
+    status: 'error',
+    statusCode,
+    message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+  });
+};
+
+// server/controllers/auth-controller.ts
+import { Request, Response } from 'express';
+import * as usersDb from '../db/users-db';
+import * as emailService from '../services/email-service';
+import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcrypt';
+import { supabaseAdmin } from '../db/supabase-client';
+
+// Funzione per registrare un nuovo utente
+export const register = async (req: Request, res: Response) => {
+  try {
+    const { username, password, name, userType, ...otherData } = req.body;
+    
+    // Verifica se l'utente esiste già
+    const existingUser = await usersDb.getUserByUsername(username);
+    if (existingUser) {
+      return res.status(400).json({ message: 'Username già in uso' });
+    }
+    
+    // Cripta la password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Crea l'utente
+    const user = await usersDb.createUser({
+      username,
+      password: hashedPassword,
+      name,
+      user_type: userType,
+      ...otherData,
+    });
+    
+    // Crea token di verifica email
+    const token = uuidv4();
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24); // Token valido per 24 ore
+    
+    await supabaseAdmin
+      .from('email_verifications')
+      .insert({
+        user_id: user.id,
+        token,
+        expires_at: expiresAt.toISOString(),
+      });
+    
+    // Invia email di verifica (in un ambiente reale)
+    await emailService.sendVerificationEmail(username, token);
+    
+    // Imposta la sessione
+    req.session.userId = user.id;
+    req.session.user = user;
+    
+    // Rimuovi la password prima di inviare la risposta
+    const { password: _, ...userWithoutPassword } = user;
+    
+    res.status(201).json(userWithoutPassword);
+  } catch (error: any) {
+    console.error('Errore nella registrazione:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Funzione per effettuare il login
+export const login = async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+    
+    // Recupera l'utente dal database
+    const user = await usersDb.getUserByUsername(username);
+    if (!user) {
+      return res.status(401).json({ message: 'Credenziali non valide' });
+    }
+    
+    // Verifica la password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Credenziali non valide' });
+    }
+    
+    // Imposta la sessione
+    req.session.userId = user.id;
+    req.session.user = user;
+    
+    // Rimuovi la password prima di inviare la risposta
+    const { password: _, ...userWithoutPassword } = user;
+    
+    res.json(userWithoutPassword);
+  } catch (error: any) {
+    console.error('Errore nel login:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Funzione per effettuare il logout
+export const logout = (req: Request, res: Response) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Errore nel logout:', err);
+      return res.status(500).json({ message: 'Errore nel logout' });
+    }
+    
+    res.clearCookie('connect.sid'); // Cancella il cookie di sessione
+    res.json({ message: 'Logout effettuato con successo' });
+  });
+};
+
+// Funzione per verificare l'email
+export const verifyEmail = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    
+    // Trova la verifica nel database
+    const { data: verification, error } = await supabaseAdmin
+      .from('email_verifications')
+      .select('*')
+      .eq('token', token)
+      .single();
+    
+    if (error || !verification) {
+      return res.status(400).json({ message: 'Token di verifica non valido' });
+    }
+    
+    // Verifica se il token è scaduto
+    if (new Date(verification.expires_at) < new Date()) {
+      return res.status(400).json({ message: 'Token di verifica scaduto' });
+    }
+    
+    // Aggiorna l'utente
+    await usersDb.updateUser(verification.user_id, {
+      email_verified: true,
+    });
+    
+    // Elimina il token di verifica
+    await supabaseAdmin
+      .from('email_verifications')
+      .delete()
+      .eq('token', token);
+    
+    res.json({ message: 'Email verificata con successo' });
+  } catch (error: any) {
+    console.error('Errore nella verifica dell\'email:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// Funzione per ottenere le informazioni sull'utente corrente
+export const getCurrentUser = async (req: Request, res: Response) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: 'Non autorizzato' });
+    }
+    
+    const user = await usersDb.getUserById(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Utente non trovato' });
+    }
+    
+    // Rimuovi la password prima di inviare la risposta
+    const { password, ...userWithoutPassword } = user;
+    
+    res.json(userWithoutPassword);
+  } catch (error: any) {
+    console.error('Errore nel recupero dell\'utente corrente:', error);
+    res.status(500).json({ message: error.message || 'Errore del server' });
+  }
+};
+
+// server/routes/auth-routes.ts
+import express from 'express';
+import * as authController from '../controllers/auth-controller';
+import { authMiddleware } from '../middleware/auth-middleware';
+
+const router = express.Router();
+
+// Rotte pubbliche
+router.post('/register', authController.register);
+router.post('/login', authController.login);
+router.get('/verify-email/:token', authController.verifyEmail);
+
+// Rotte protette (richiedono autenticazione)
+router.use(authMiddleware);
+router.post('/logout', authController.logout);
+router.get('/me', authController.getCurrentUser);
+
+export default router;
+
+// server/services/email-service.ts
+/**
+ * Servizio per l'invio di email
+ * In un ambiente di produzione, questo utilizzerebbe un servizio di email come SendGrid, Mailgun, etc.
+ */
+
+// Funzione per inviare un'email di verifica
+export const sendVerificationEmail = async (email: string, token: string) => {
+  // In un ambiente di test, simuliamo l'invio della email
+  const verificationLink = `http://localhost:5173/verify-email/${token}`;
+  
+  // Stampiamo il link nella console per debug
+  console.log(`Email di verifica inviata a ${email}`);
+  console.log(`Link di verifica: ${verificationLink}`);
+  
+  // In produzione, implementare l'invio reale dell'email
+  return { success: true };
+};
+
+// Funzione per inviare una notifica di password dimenticata
+export const sendPasswordResetEmail = async (email: string, token: string) => {
+  // Simile alla funzione precedente
+  const resetLink = `http://localhost:5173/reset-password/${token}`;
+  
+  console.log(`Email di reset password inviata a ${email}`);
+  console.log(`Link di reset: ${resetLink}`);
+  
+  return { success: true };
+};
+
+// Funzione per inviare una notifica di ordine
+export const sendOrderNotificationEmail = async (email: string, orderId: number, status: string) => {
+  console.log(`Email di notifica ordine #${orderId} inviata a ${email}`);
+  console.log(`Stato ordine: ${status}`);
+  
+  return { success: true };
+};
+
+// server/db/subscriptions-db.ts
+import { supabaseAdmin } from './supabase-client';
+
+export const getSubscriptionPlanById = async (id: number) => {
+  const { data, error } = await supabaseAdmin
+    .from('subscription_plans')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const getSubscriptionPlansByUserId = async (userId: number) => {
+  const { data, error } = await supabaseAdmin
+    .from('subscription_plans')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+export const createSubscriptionPlan = async (plan: any) => {
+  const { data, error } = await supabaseAdmin
+    .from('subscription_plans')
+    .insert(plan)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const updateSubscriptionPlan = async (id: number, updates: any) => {
+  const { data, error } = await supabaseAdmin
+    .from('subscription_plans')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const deleteSubscriptionPlan = async (id: number) => {
+  const { error } = await supabaseAdmin
+    .from('subscription_plans')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+  return { success: true };
+};
+
+export const getSubscriptionDiscountsByPlanId = async (planId: number) => {
+  const { data, error } = await supabaseAdmin
+    .from('subscription_discounts')
+    .select('*')
+    .eq('plan_id', planId)
+    .order('deliveries_per_week', { ascending: true })
+    .order('duration_weeks', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
+export const createSubscriptionDiscount = async (discount: any) => {
+  const { data, error } = await supabaseAdmin
+    .from('subscription_discounts')
+    .insert(discount)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// server/routes/subscription-routes.ts
+import express from 'express';
+import * as subscriptionController from '../controllers/subscription-controller';
+import { authMiddleware } from '../middleware/auth-middleware';
+
+const router = express.Router();
+
+// Rotte pubbliche per recuperare informazioni sui piani
+router.get('/plans', subscriptionController.getAllSubscriptionPlans);
+router.get('/plans/:id', subscriptionController.getSubscriptionPlanById);
+router.get('/plans/:id/discounts', subscriptionController.getSubscriptionDiscountsByPlanId);
+
+// Rotte protette che richiedono autenticazione
+router.use(authMiddleware);
+
+// Rotte per i ristoranti
+router.post('/plans', subscriptionController.createSubscriptionPlan);
+router.put('/plans/:id', subscriptionController.updateSubscriptionPlan);
+router.delete('/plans/:id', subscriptionController.deleteSubscriptionPlan);
+router.post('/plans/:id/discounts', subscriptionController.createSubscriptionDiscount);
+
+// Rotte per i clienti
+router.get('/user/plans', subscriptionController.getUserSubscriptionPlans);
+router.post('/subscribe', subscriptionController.subscribeToPlans);
+
+export default router;

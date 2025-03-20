@@ -1,0 +1,135 @@
+// server/db/supabase-client.ts
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+// Carica le variabili d'ambiente
+dotenv.config();
+
+// Verifica che le variabili d'ambiente necessarie siano definite
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+  throw new Error('Variabili d\'ambiente mancanti: SUPABASE_URL o SUPABASE_SERVICE_KEY');
+}
+
+// Crea il client Supabase con la chiave di servizio (accesso admin)
+export const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+  {
+    auth: {
+      persistSession: false,
+    },
+  }
+);
+
+// Crea il client Supabase con la chiave anonima (accesso pubblico)
+export const supabaseClient = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY || '',
+  {
+    auth: {
+      persistSession: false,
+    },
+  }
+);
+
+// Funzioni di utilità per operazioni comuni sul database
+
+/**
+ * Esegue una query con gestione degli errori
+ * 
+ * @param callback Funzione da eseguire
+ * @returns Risultato della funzione
+ */
+export async function withErrorHandling<T>(callback: () => Promise<T>): Promise<T> {
+  try {
+    return await callback();
+  } catch (error: any) {
+    console.error('Errore database:', error);
+    
+    // Gestione specifica per errori di Supabase
+    if (error.code === '23505') {
+      throw new Error('Errore di duplicazione: l\'elemento esiste già');
+    }
+    
+    if (error.code === '23503') {
+      throw new Error('Errore di integrità referenziale: elemento correlato non trovato');
+    }
+    
+    // Rilancia l'errore originale per altri casi
+    throw error;
+  }
+}
+
+/**
+ * Formatta i risultati della query convertendo snake_case in camelCase
+ * 
+ * @param data Dati da formattare
+ * @returns Dati formattati
+ */
+export function formatResults<T>(data: any): T {
+  if (!data) {
+    return data;
+  }
+  
+  if (Array.isArray(data)) {
+    return data.map(item => formatItem(item)) as unknown as T;
+  }
+  
+  return formatItem(data) as T;
+}
+
+/**
+ * Formatta un singolo elemento convertendo snake_case in camelCase
+ * 
+ * @param item Elemento da formattare
+ * @returns Elemento formattato
+ */
+function formatItem(item: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  
+  for (const [key, value] of Object.entries(item)) {
+    // Converti da snake_case a camelCase
+    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    
+    // Formatta ricorsivamente gli oggetti nested
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      result[camelKey] = formatItem(value);
+    } else {
+      result[camelKey] = value;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Converte un oggetto da camelCase a snake_case per il database
+ * 
+ * @param item Oggetto da convertire
+ * @returns Oggetto convertito
+ */
+export function toSnakeCase(item: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  
+  for (const [key, value] of Object.entries(item)) {
+    // Converti da camelCase a snake_case
+    const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    
+    // Converti ricorsivamente gli oggetti nested
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      result[snakeKey] = toSnakeCase(value);
+    } else {
+      result[snakeKey] = value;
+    }
+  }
+  
+  return result;
+}
+
+// client/src/lib/supabase.ts
+// import { createClient } from '@supabase/supabase-js';
+// import { Database } from '../types/database.types';
+
+// // Recupera le variabili d'ambiente da Vite
+// const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+// const supabaseAnonKey = import.
