@@ -1,0 +1,61 @@
+import { z } from 'zod';
+
+// Tipi di notifiche supportati
+export const notificationTypes = [
+  'ORDER_CREATED',
+  'ORDER_UPDATED',
+  'DONATION_RECEIVED',
+  'RATING_RECEIVED',
+  'SUBSCRIPTION_UPDATED'
+] as const;
+
+// Schema per la validazione delle notifiche
+export const notificationSchema = z.object({
+  id: z.string().uuid().optional(),
+  userId: z.string().uuid(),
+  type: z.enum(notificationTypes),
+  title: z.string().max(100),
+  message: z.string().max(500),
+  read: z.boolean().default(false),
+  createdAt: z.string().datetime().optional(),
+  data: z.record(z.string(), z.any()).optional(),
+});
+
+// Schema per la creazione di una nuova notifica
+export const createNotificationSchema = notificationSchema.omit({ 
+  id: true,
+  read: true,
+  createdAt: true 
+});
+
+// Schema per l'aggiornamento di una notifica esistente
+export const updateNotificationSchema = z.object({
+  id: z.string().uuid(),
+  read: z.boolean().optional(),
+});
+
+// Tipo TypeScript per la notifica
+export type Notification = z.infer<typeof notificationSchema>;
+
+// Tipo per la creazione di una notifica
+export type CreateNotification = z.infer<typeof createNotificationSchema>;
+
+// Tipo per l'aggiornamento di una notifica
+export type UpdateNotification = z.infer<typeof updateNotificationSchema>;
+
+// Schema per la risposta API delle notifiche
+export const notificationResponseSchema = notificationSchema;
+
+// Tipo per la risposta API delle notifiche
+export type NotificationResponse = z.infer<typeof notificationResponseSchema>;
+
+// Schema per le statistiche delle notifiche
+export const notificationStatsSchema = z.object({
+  userId: z.string().uuid(),
+  totalCount: z.number(),
+  unreadCount: z.number(),
+  countByType: z.record(z.string(), z.number()),
+});
+
+// Tipo per le statistiche delle notifiche
+export type NotificationStats = z.infer<typeof notificationStatsSchema>;

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Thermopolio - Food Sharing</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/css/style.css">
+  </head>
+  <body>
+    <h1>Thermopolio - Food Sharing</h1>
+    
+    <!-- SEZIONE HOME -->
+    <div id="home-section" class="section active">
+      <div class="card">
+        <h2>Benvenuto</h2>
+        <p>Questa è una versione di test dell'applicazione Thermopolio per la condivisione di cibo tra ristoranti, clienti e ONLUS.</p>
+        <p>Puoi testare l'API utilizzando le credenziali demo qui sotto.</p>
+        <div id="userInfoPanel" class="user-info" style="display: none;">
+          <strong>Utente connesso:</strong> <span id="userInfo"></span>
+          <button id="goToDashboardBtn" class="button" style="margin-left: 10px;">Vai alla dashboard</button>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h2>Login</h2>
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" placeholder="cliente, ristorante, onlus">
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" placeholder="cliente123, ristorante123, onlus123">
+          </div>
+          <button type="submit" id="loginButton">Accedi</button>
+          <div id="loginMessage"></div>
+        </form>
+      </div>
+      
+      <div class="card">
+        <h2>API Test</h2>
+        <button id="getRestaurants" disabled>Carica Ristoranti</button>
+        <button id="getSubscriptions" disabled>Carica Abbonamenti</button>
+        <div id="apiResult" style="margin-top: 15px;"></div>
+      </div>
+    </div>
+    
+    <!-- SEZIONE DASHBOARD CLIENTE -->
+    <div id="customer-dashboard" class="section">
+      <div class="card">
+        <h1>Dashboard Cliente</h1>
+        <p>Benvenuto nella dashboard di Thermopolio per <strong>Cliente</strong>! Questa è una versione di test dell'applicazione.</p>
+        
+        <div class="info">
+          <p><strong>Utente:</strong> <span id="customer-username"></span></p>
+          <p><strong>Tipo:</strong> <span id="customer-userType"></span></p>
+        </div>
+        
+        <h2>Funzionalità disponibili:</h2>
+        <ul>
+          <li>Scoperta di ristoranti nelle vicinanze</li>
+          <li>Abbonamento a piani pasto</li>
+          <li>Donazione di pasti alle ONLUS</li>
+        </ul>
+        
+        <button class="button back-to-home">Torna alla home</button>
+        <button id="customer-logout" class="button" style="background: #f44336; margin-left: 10px;">Logout</button>
+      </div>
+    </div>
+    
+    <!-- SEZIONE DASHBOARD TAVOLA CALDA -->
+    <div id="tavola-calda-dashboard" class="section">
+      <div class="card">
+        <h1>Dashboard Tavola Calda</h1>
+        <p>Benvenuto nella dashboard di Thermopolio per <strong>Tavola Calda</strong>! Questa è una versione di test dell'applicazione.</p>
+        
+        <div class="info">
+          <p><strong>Utente:</strong> <span id="tavola-calda-username"></span></p>
+          <p><strong>Tipo:</strong> <span id="tavola-calda-userType"></span></p>
+        </div>
+        
+        <h2>Funzionalità disponibili:</h2>
+        <ul>
+          <li>Creazione di piani di abbonamento</li>
+          <li>Gestione degli ordini ricevuti</li>
+          <li>Statistiche sugli ordini</li>
+        </ul>
+        
+        <button class="button back-to-home">Torna alla home</button>
+        <button id="tavola-calda-logout" class="button" style="background: #f44336; margin-left: 10px;">Logout</button>
+      </div>
+    </div>
+    
+    <!-- SEZIONE DASHBOARD ONLUS -->
+    <div id="onlus-dashboard" class="section">
+      <div class="card">
+        <h1>Dashboard ONLUS</h1>
+        <p>Benvenuto nella dashboard di Thermopolio per <strong>ONLUS</strong>! Questa è una versione di test dell'applicazione.</p>
+        
+        <div class="info">
+          <p><strong>Utente:</strong> <span id="onlus-username"></span></p>
+          <p><strong>Tipo:</strong> <span id="onlus-userType"></span></p>
+        </div>
+        
+        <h2>Funzionalità disponibili:</h2>
+        <ul>
+          <li>Ricezione e gestione delle donazioni</li>
+          <li>Statistiche sulle donazioni</li>
+          <li>Gestione del profilo</li>
+        </ul>
+        
+        <button class="button back-to-home">Torna alla home</button>
+        <button id="onlus-logout" class="button" style="background: #f44336; margin-left: 10px;">Logout</button>
+      </div>
+    </div>
+    
+    <script src="/js/app.js"></script>
+  </body>
+</html>

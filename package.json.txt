@@ -1,0 +1,32 @@
+{
+  "name": "thermopolio",
+  "version": "1.0.0",
+  "description": "Piattaforma di food sharing per ristoranti, clienti e ONLUS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "setup": "npm install && mkdir -p public && mkdir -p public/css && mkdir -p public/js",
+    "postinstall": "node -e \"try { require('./utils/init')() } catch (e) { console.log('Inizializzazione post-install fallita:', e) }\""
+  },
+  "keywords": [
+    "food-sharing",
+    "restaurant",
+    "subscription",
+    "donation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

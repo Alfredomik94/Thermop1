@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Ristorante - Thermopolio</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container header-content">
+      <a href="/dashboard/tavola-calda.html" class="logo">Thermopolio</a>
+      <div class="user-info">
+        <span class="user-name" id="userNameDisplay">Ristorante</span>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="dashboard">
+    <div class="sidebar">
+      <ul class="sidebar-menu">
+        <li><a href="#" class="active" data-tab="proposals">Proposte</a></li>
+        <li><a href="#" data-tab="orders">Ordini</a></li>
+        <li><a href="#" data-tab="statistics">Statistiche</a></li>
+        <li><a href="#" data-tab="profile">Profilo</a></li>
+        <li><a href="#" data-tab="subscriptions">Abbonamenti</a></li>
+      </ul>
+    </div>
+
+    <div class="main-content">
+      <!-- Sezione Proposte -->
+      <div class="tab-content" id="proposalsTab">
+        <h2>Gestione proposte</h2>
+        
+        <div class="card">
+          <div class="card-header">
+            Crea nuovo piano di abbonamento
+          </div>
+          <div class="card-body">
+            <form id="newPlanForm">
+              <div class="form-group">
+                <label for="planName" class="form-label">Nome del piano</label>
+                <input type="text" id="planName" class="form-control" placeholder="Es. Piano Pranzo">
+              </div>
+              
+              <div class="form-group">
+                <label for="planDescription" class="form-label">Descrizione</label>
+                <textarea id="planDescription" class="form-control" rows="3" placeholder="Descrivi il piano..."></textarea>
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">Tipo di piano</label>
+                <div>
+                  <label class="radio-label">
+                    <input type="radio" name="planType" value="primo" checked> Primo piatto
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="planType" value="secondo"> Secondo piatto
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="planType" value="completo"> Pasto completo
+                  </label>
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label for="basePrice" class="form-label">Prezzo base (€)</label>
+                <input type="number" id="basePrice" class="form-control" step="0.01" min="0">
+              </div>
+              
+              <div class="card mt-20">
+                <div class="card-header">
+                  Sconti per frequenza e durata
+                </div>
+                <div class="card-body">
+                  <div id="discountsContainer">
+                    <div class="discount-row">
+                      <div class="form-group">
+                        <label class="form-label">Consegne a settimana</label>
+                        <select class="form-control deliveries-per-week">
+                          <option value="1">1 consegna</option>
+                          <option value="2">2 consegne</option>
+                          <option value="3">3 consegne</option>
+                          <option value="5">5 consegne</option>
+                        </select>
+                      </div>
+                      
+                      <div class="form-group">
+                        <label class="form-label">Durata (settimane)</label>
+                        <select class="form-control duration-weeks">
+                          <option value="1">1 settimana</option>
+                          <option value="2">2 settimane</option>
+                          <option value="4">4 settimane</option>
+                          <option value="12">12 settimane</option>
+                        </select>
+                      </div>
+                      
+                      <div class="form-group">
+                        <label class="form-label">Sconto (%)</label>
+                        <input type="number" class="form-control discount-percentage" min="0" max="100" step="1">
+                      </div>
+                      
+                      <div class="form-group btn-group">
+                        <button type="button" class="btn btn-danger remove-discount">Rimuovi</button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button type="button" class="btn btn-secondary" id="addDiscountBtn">Aggiungi sconto</button>
+                </div>
+              </div>
+              
+              <button type="submit" class="btn btn-primary mt-20">Crea piano</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione Ordini -->
+      <div class="tab-content" id="ordersTab" style="display: none;">
+        <h2>Gestione ordini</h2>
+        
+        <div class="card">
+          <div class="card-header">
+            Ordini in attesa
+          </div>
+          <div class="card-body">
+            <div id="pendingOrdersContainer">
+              <p>Caricamento ordini...</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card mt-20">
+          <div class="card-header">
+            Ordini completati
+          </div>
+          <div class="card-body">
+            <div id="completedOrdersContainer">
+              <p>Caricamento ordini...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione Statistiche -->
+      <div class="tab-content" id="statisticsTab" style="display: none;">
+        <h2>Statistiche</h2>
+        
+        <div class="stats-grid">
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Totale ordini</h3>
+              <div class="stats-value" id="totalOrdersStats">0</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Media ordini giornalieri</h3>
+              <div class="stats-value" id="avgOrdersStats">0</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Valutazione media</h3>
+              <div class="stats-value" id="avgRatingStats">0</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Ricavo medio mensile</h3>
+              <div class="stats-value" id="avgRevenueStats">€0</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card mt-20">
+          <div class="card-header">
+            Andamento mensile
+          </div>
+          <div class="card-body">
+            <div id="monthlyChartContainer" style="height: 300px;">
+              <!-- Qui verrebbe inserito un grafico -->
+              <div class="chart-placeholder">
+                <div style="height: 20px; width: 80%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 40px; width: 65%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 60px; width: 90%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 50px; width: 75%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 70px; width: 85%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 30px; width: 50%; background: #e8e8e8;"></div>
+                <div class="chart-labels">
+                  <span>Gen</span>
+                  <span>Feb</span>
+                  <span>Mar</span>
+                  <span>Apr</span>
+                  <span>Mag</span>
+                  <span>Giu</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione Profilo -->
+      <div class="tab-content" id="profileTab" style="display: none;">
+        <h2>Profilo ristorante</h2>
+        
+        <div class="card">
+          <div class="card-body">
+            <form id="restaurantProfileForm">
+              <div class="form-group">
+                <label for="restaurantName" class="form-label">Nome ristorante</label>
+                <input type="text" id="restaurantName" class="form-control" placeholder="Nome del tuo ristorante">
+              </div>
+              
+              <div class="form-group">
+                <label for="restaurantType" class="form-label">Tipo di cucina</label>
+                <select id="restaurantType" class="form-control">
+                  <option value="Italiano">Italiano</option>
+                  <option value="Giapponese">Giapponese</option>
+                  <option value="Francese">Francese</option>
+                  <option value="Messicano">Messicano</option>
+                  <option value="Indiano">Indiano</option>
+                  <option value="Cinese">Cinese</option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label for="restaurantAddress" class="form-label">Indirizzo</label>
+                <input type="text" id="restaurantAddress" class="form-control" placeholder="Indirizzo del ristorante">
+              </div>
+              
+              <div class="form-group">
+                <label for="restaurantDescription" class="form-label">Descrizione</label>
+                <textarea id="restaurantDescription" class="form-control" rows="4" placeholder="Descrizione del tuo ristorante..."></textarea>
+              </div>
+              
+              <div class="form-group">
+                <label class="form-label">Foto del ristorante</label>
+                <div class="photo-upload">
+                  <input type="file" id="restaurantPhoto" class="form-control">
+                </div>
+              </div>
+              
+              <button type="submit" class="btn btn-primary mt-10">Salva modifiche</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione Abbonamenti -->
+      <div class="tab-content" id="subscriptionsTab" style="display: none;">
+        <h2>I tuoi piani di abbonamento</h2>
+        
+        <div id="subscriptionPlansContainer">
+          <p>Caricamento piani...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Gestione delle tab
+      const tabLinks = document.querySelectorAll('.sidebar-menu a');
+      const tabContents = document.querySelectorAll('.tab-content');
+      
+      tabLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          
+          // Rimuovi la classe active da tutti i link
+          tabLinks.forEach(l => l.classList.remove('active'));
+          
+          // Aggiungi la classe active al link cliccato
+          this.classList.add('active');
+          
+          // Nascondi tutti i contenuti
+          tabContents.forEach(content => {
+            content.style.display = 'none';
+          });
+          
+          // Mostra il contenuto corrispondente
+          const tabId = this.getAttribute('data-tab') + 'Tab';
+          document.getElementById(tabId).style.display = 'block';
+          
+          // Carica i dati in base alla tab
+          if (tabId === 'ordersTab') {
+            loadOrders();
+          } else if (tabId === 'statisticsTab') {
+            loadStatistics();
+          } else if (tabId === 'profileTab') {
+            loadProfile();
+          } else if (tabId === 'subscriptionsTab') {
+            loadSubscriptionPlans();
+          }
+        });
+      });
+      
+      // Gestione del form di creazione piano
+      document.getElementById('newPlanForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const planName = document.getElementById('planName').value;
+        const planDescription = document.getElementById('planDescription').value;
+        const planType = document.querySelector('input[name="planType"]:checked').value;
+        const basePrice = document.getElementById('basePrice').value;
+        
+        if (!planName || !planDescription || !basePrice) {
+          showNotification('Compila tutti i campi richiesti', 'error');
+          return;
+        }
+        
+        // Raccogli i dati degli sconti
+        const discounts = [];
+        const discountRows = document.querySelectorAll('.discount-row');
+        
+        discountRows.forEach(row => {
+          const deliveriesPerWeek = row.querySelector('.deliveries-per-week').value;
+          const durationWeeks = row.querySelector('.duration-weeks').value;
+          const discountPercentage = row.querySelector('.discount-percentage').value;
+          
+          if (deliveriesPerWeek && durationWeeks && discountPercentage) {
+            discounts.push({
+              deliveriesPerWeek: parseInt(deliveriesPerWeek),
+              durationWeeks: parseInt(durationWeeks),
+              discountPercentage: parseInt(discountPercentage)
+            });
+          }
+        });
+        
+        // Simulazione creazione piano
+        fetch('/api/subscription-plans', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: planName,
+            description: planDescription,
+            planType,
+            basePrice: parseFloat(basePrice),
+            discounts
+          })
+        })
+        .then(response => response.json())
+        .then(data => {
+          showNotification('Piano creato con successo!', 'success');
+          this.reset();
+        })
+        .catch(error => {
+          showNotification('Errore durante la creazione del piano: ' + error.message, 'error');
+        });
+      });
+      
+      // Gestione del pulsante aggiungi sconto
+      document.getElementById('addDiscountBtn').addEventListener('click', function() {
+        const discountRow = document.querySelector('.discount-row').cloneNode(true);
+        discountRow.querySelector('.discount-percentage').value = '';
+        
+        // Aggiungi evento per rimuovere la riga
+        discountRow.querySelector('.remove-discount').addEventListener('click', function() {
+          discountRow.remove();
+        });
+        
+        document.getElementById('discountsContainer').appendChild(discountRow);
+      });
+      
+      // Nasconde il pulsante "Rimuovi" sulla prima riga di sconto
+      document.querySelector('.discount-row .remove-discount').style.display = 'none';
+    });
+    
+    // Carica ordini
+    async function loadOrders() {
+      const pendingContainer = document.getElementById('pendingOrdersContainer');
+      const completedContainer = document.getElementById('completedOrdersContainer');
+      
+      pendingContainer.innerHTML = '<p>Caricamento ordini in attesa...</p>';
+      completedContainer.innerHTML = '<p>Caricamento ordini completati...</p>';
+      
+      try {
+        // Simulazione: nella versione reale, chiameremmo un'API
+        setTimeout(() => {
+          pendingContainer.innerHTML = `
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Cliente</th>
+                  <th>Piano</th>
+                  <th>Data</th>
+                  <th>Azioni</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td>
+                  <td>Mario Rossi</td>
+                  <td>Primo piatto</td>
+                  <td>${formatDate(new Date().setDate(new Date().getDate() + 1))}</td>
+                  <td>
+                    <button class="btn btn-success btn-sm" onclick="markOrderAsCompleted(1)">Completa</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td>2</td>
+                  <td>Giulia Bianchi</td>
+                  <td>Completo</td>
+                  <td>${formatDate(new Date().setDate(new Date().getDate() + 3))}</td>
+                  <td>
+                    <button class="btn btn-success btn-sm" onclick="markOrderAsCompleted(2)">Completa</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          `;
+          
+          completedContainer.innerHTML = `
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Cliente</th>
+                  <th>Piano</th>
+                  <th>Data</th>
+                  <th>Stato</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>3</td>
+                  <td>Luca Verdi</td>
+                  <td>Secondo piatto</td>
+                  <td>${formatDate(new Date().setDate(new Date().getDate() - 1))}</td>
+                  <td>Completato</td>
+                </tr>
+                <tr>
+                  <td>4</td>
+                  <td>Anna Neri</td>
+                  <td>Completo</td>
+                  <td>${formatDate(new Date().setDate(new Date().getDate() - 2))}</td>
+                  <td>Completato</td>
+                </tr>
+              </tbody>
+            </table>
+          `;
+        }, 1000);
+      } catch (error) {
+        pendingContainer.innerHTML = `<p>Errore durante il caricamento degli ordini: ${error.message}</p>`;
+        completedContainer.innerHTML = `<p>Errore durante il caricamento degli ordini: ${error.message}</p>`;
+      }
+    }
+    
+    // Carica statistiche
+    function loadStatistics() {
+      // Simulazione statistiche
+      document.getElementById('totalOrdersStats').textContent = '42';
+      document.getElementById('avgOrdersStats').textContent = '3.5';
+      document.getElementById('avgRatingStats').textContent = '4.7';
+      document.getElementById('avgRevenueStats').textContent = '€842';
+    }
+    
+    // Carica profilo
+    function loadProfile() {
+      const user = getLoggedInUser();
+      if (user) {
+        document.getElementById('restaurantName').value = user.name || '';
+      }
+    }
+    
+    // Carica piani di abbonamento
+    async function loadSubscriptionPlans() {
+      const container = document.getElementById('subscriptionPlansContainer');
+      container.innerHTML = '<p>Caricamento piani...</p>';
+      
+      try {
+        const response = await fetch('/api/subscription-plans');
+        const plans = await response.json();
+        
+        if (plans.length === 0) {
+          container.innerHTML = '<p>Nessun piano di abbonamento trovato. Crea il tuo primo piano dalla sezione "Proposte".</p>';
+          return;
+        }
+        
+        container.innerHTML = '';
+        plans.forEach(plan => {
+          container.innerHTML += `
+            <div class="card mb-10">
+              <div class="card-header">
+                ${plan.name}
+              </div>
+              <div class="card-body">
+                <p>${plan.description}</p>
+                <p><strong>Tipo:</strong> ${plan.planType}</p>
+                <p><strong>Prezzo base:</strong> ${formatCurrency(plan.basePrice)}</p>
+                <div class="text-right">
+                  <button class="btn btn-secondary" onclick="editPlan(${plan.id})">Modifica</button>
+                  <button class="btn btn-danger" onclick="deletePlan(${plan.id})">Elimina</button>
+                </div>
+              </div>
+            </div>
+          `;
+        });
+      } catch (error) {
+        container.innerHTML = `<p>Errore durante il caricamento dei piani: ${error.message}</p>`;
+      }
+    }
+    
+    // Marca un ordine come completato
+    function markOrderAsCompleted(orderId) {
+      // Simulazione completamento ordine
+      showNotification('Ordine #' + orderId + ' completato con successo', 'success');
+      loadOrders();
+    }
+    
+    // Modifica piano
+    function editPlan(planId) {
+      // Simulazione: nella versione reale caricheremmo i dati del piano e apriremmo un form di modifica
+      showNotification('Funzionalità di modifica in sviluppo', 'info');
+    }
+    
+    // Elimina piano
+    function deletePlan(planId) {
+      if (confirm('Sei sicuro di voler eliminare questo piano di abbonamento?')) {
+        // Simulazione eliminazione piano
+        showNotification('Piano eliminato con successo', 'success');
+        loadSubscriptionPlans();
+      }
+    }
+  </script>
+  
+  <style>
+    /* Stili specifici per la dashboard ristorante */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 20px;
+    }
+    
+    .stats-card {
+      text-align: center;
+    }
+    
+    .stats-value {
+      font-size: 36px;
+      font-weight: bold;
+      color: #4a6cf7;
+      margin-top: 10px;
+    }
+    
+    .radio-label {
+      margin-right: 15px;
+    }
+    
+    .discount-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 15px;
+      margin-bottom: 15px;
+      align-items: end;
+    }
+    
+    .chart-placeholder {
+      position: relative;
+      padding-top: 30px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+    
+    .chart-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+    
+    /* Notifiche */
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 4px;
+      background-color: #333;
+      color: white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      transform: translateY(-100px);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 2000;
+    }
+    
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .notification.success {
+      background-color: #28a745;
+    }
+    
+    .notification.error {
+      background-color: #dc3545;
+    }
+    
+    .notification.info {
+      background-color: #17a2b8;
+    }
+  </style>
+</body>
+</html>

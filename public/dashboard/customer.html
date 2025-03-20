@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Cliente - Thermopolio</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container header-content">
+      <a href="/dashboard/customer.html" class="logo">Thermopolio</a>
+      <div class="user-info">
+        <span class="user-name" id="userNameDisplay">Cliente</span>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="dashboard">
+    <div class="sidebar">
+      <ul class="sidebar-menu">
+        <li><a href="#" class="active" data-tab="discover">Discover</a></li>
+        <li><a href="#" data-tab="search">Cerca</a></li>
+        <li><a href="#" data-tab="orders">I Miei Ordini</a></li>
+        <li><a href="#" data-tab="profile">Profilo</a></li>
+      </ul>
+    </div>
+
+    <div class="main-content">
+      <!-- Sezione Discover -->
+      <div class="tab-content" id="discoverTab">
+        <h2>Scopri i ristoranti vicino a te</h2>
+
+        <div class="mb-20">
+          <h3>Filtri Cucina</h3>
+          <div class="cuisine-filters">
+            <button class="btn btn-secondary cuisine-filter active">Tutti</button>
+            <button class="btn btn-secondary cuisine-filter">Italiano</button>
+            <button class="btn btn-secondary cuisine-filter">Giapponese</button>
+            <button class="btn btn-secondary cuisine-filter">Francese</button>
+            <button class="btn btn-secondary cuisine-filter">Messicano</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            Prossimo Ordine
+          </div>
+          <div class="card-body" id="nextOrderContainer">
+            <p>Caricamento del prossimo ordine...</p>
+          </div>
+        </div>
+
+        <h3>Ristoranti nelle vicinanze</h3>
+        <div id="restaurantsContainer" class="restaurants-grid">
+          <!-- I ristoranti saranno caricati qui -->
+          <p>Caricamento ristoranti...</p>
+        </div>
+      </div>
+
+      <!-- Sezione Search -->
+      <div class="tab-content" id="searchTab" style="display: none;">
+        <h2>Cerca ristoranti</h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="form-group">
+              <label for="searchInput" class="form-label">Nome ristorante</label>
+              <input type="text" id="searchInput" class="form-control" placeholder="Es. Trattoria da Mario">
+            </div>
+            <button class="btn btn-primary" id="searchButton">Cerca</button>
+          </div>
+        </div>
+
+        <div id="searchResults" class="mt-20">
+          <!-- Risultati di ricerca -->
+        </div>
+      </div>
+
+      <!-- Sezione Ordini -->
+      <div class="tab-content" id="ordersTab" style="display: none;">
+        <h2>I miei ordini</h2>
+        <div class="card">
+          <div class="card-body">
+            <div id="ordersContainer">
+              <p>Caricamento ordini...</p>
+              <!-- Gli ordini saranno caricati qui -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione Profilo -->
+      <div class="tab-content" id="profileTab" style="display: none;">
+        <h2>Il mio profilo</h2>
+        <div class="card">
+          <div class="card-body">
+            <form id="profileForm">
+              <div class="form-group">
+                <label for="profileName" class="form-label">Nome</label>
+                <input type="text" id="profileName" class="form-control" placeholder="Il tuo nome">
+              </div>
+
+              <div class="form-group">
+                <label for="profileEmail" class="form-label">Email</label>
+                <input type="email" id="profileEmail" class="form-control" placeholder="La tua email" disabled>
+              </div>
+
+              <div class="form-group">
+                <label for="profileAddress" class="form-label">Indirizzo</label>
+                <input type="text" id="profileAddress" class="form-control" placeholder="Il tuo indirizzo">
+              </div>
+
+              <h3 class="mt-20">Preferenze</h3>
+
+              <div class="form-group">
+                <label for="profilePreferredPickup" class="form-label">Punto di ritiro preferito</label>
+                <select id="profilePreferredPickup" class="form-control">
+                  <option value="">Seleziona un punto di ritiro</option>
+                  <option value="1">Punto Ritiro Centro</option>
+                  <option value="2">Punto Ritiro Stazione</option>
+                </select>
+              </div>
+
+              <button type="submit" class="btn btn-primary mt-10">Salva modifiche</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Gestione delle tab
+      const tabLinks = document.querySelectorAll('.sidebar-menu a');
+      const tabContents = document.querySelectorAll('.tab-content');
+
+      tabLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+
+          // Rimuovi la classe active da tutti i link
+          tabLinks.forEach(l => l.classList.remove('active'));
+
+          // Aggiungi la classe active al link cliccato
+          this.classList.add('active');
+
+          // Nascondi tutti i contenuti
+          tabContents.forEach(content => {
+            content.style.display = 'none';
+          });
+
+          // Mostra il contenuto corrispondente
+          const tabId = this.getAttribute('data-tab') + 'Tab';
+          document.getElementById(tabId).style.display = 'block';
+        });
+      });
+
+      // Caricamento ristoranti
+      loadRestaurants();
+
+      // Caricamento del prossimo ordine
+      loadNextOrder();
+
+      // Caricamento degli ordini
+      document.querySelector('[data-tab="orders"]').addEventListener('click', function() {
+        loadOrders();
+      });
+
+      // Caricamento del profilo
+      document.querySelector('[data-tab="profile"]').addEventListener('click', function() {
+        loadProfile();
+      });
+
+      // Gestione filtri cucina
+      const cuisineFilters = document.querySelectorAll('.cuisine-filter');
+      cuisineFilters.forEach(filter => {
+        filter.addEventListener('click', function() {
+          cuisineFilters.forEach(f => f.classList.remove('active'));
+          this.classList.add('active');
+          loadRestaurants(this.textContent === 'Tutti' ? null : this.textContent);
+        });
+      });
+
+      // Gestione ricerca
+      document.getElementById('searchButton').addEventListener('click', function() {
+        const query = document.getElementById('searchInput').value;
+        searchRestaurants(query);
+      });
+    });
+
+    // Carica ristoranti
+    async function loadRestaurants(cuisineType = null) {
+      const container = document.getElementById('restaurantsContainer');
+      container.innerHTML = '<p>Caricamento ristoranti...</p>';
+
+      try {
+        const response = await fetch('/api/restaurants');
+        const restaurants = await response.json();
+
+        let filteredRestaurants = restaurants;
+        if (cuisineType) {
+          filteredRestaurants = restaurants.filter(r => r.type === cuisineType);
+        }
+
+        if (filteredRestaurants.length === 0) {
+          container.innerHTML = '<p>Nessun ristorante trovato</p>';
+          return;
+        }
+
+        container.innerHTML = '';
+        filteredRestaurants.forEach(restaurant => {
+          container.innerHTML += `
+            <div class="card">
+              <div class="card-body">
+                <h3>${restaurant.name}</h3>
+                <p>Tipologia: ${restaurant.type}</p>
+                <p>Distanza: ${restaurant.distance}</p>
+                <p>Valutazione: ${restaurant.rating}/5</p>
+                <button class="btn btn-primary mt-10" onclick="viewRestaurant(${restaurant.id})">Vedi abbonamenti</button>
+              </div>
+            </div>
+          `;
+        });
+      } catch (error) {
+        container.innerHTML = `<p>Errore durante il caricamento dei ristoranti: ${error.message}</p>`;
+      }
+    }
+
+    // Carica il prossimo ordine
+    async function loadNextOrder() {
+      const container = document.getElementById('nextOrderContainer');
+
+      try {
+        // Simulazione: nella versione reale, chiameremmo un'API
+        setTimeout(() => {
+          container.innerHTML = `
+            <div class="next-order">
+              <h3>Primo piatto - Trattoria da Mario</h3>
+              <p>Data ritiro: ${formatDate(new Date().setDate(new Date().getDate() + 1))}</p>
+              <p>Punto ritiro: Punto Ritiro Centro</p>
+              <div class="text-right mt-10">
+                <button class="btn btn-secondary" onclick="donateOrder(1)">Dona questo pasto</button>
+              </div>
+            </div>
+          `;
+        }, 1000);
+      } catch (error) {
+        container.innerHTML = `<p>Nessun ordine programmato</p>`;
+      }
+    }
+
+    // Carica ordini
+    async function loadOrders() {
+      const container = document.getElementById('ordersContainer');
+      container.innerHTML = '<p>Caricamento ordini...</p>';
+
+      try {
+        // Simulazione: nella versione reale, chiameremmo un'API
+        setTimeout(() => {
+          container.innerHTML = `
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Ristorante</th>
+                  <th>Piano</th>
+                  <th>Data</th>
+                  <th>Stato</th>
+                  <th>Azioni</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td>
+                  <td>Trattoria da Mario</td>
+                  <td>Primo piatto</td>
+                  <td>${formatDate(new Date().setDate(new Date().getDate() + 1))}</td>
+                  <td>In attesa</td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm" onclick="donateOrder(1)">Dona</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td>2</td>
+                  <td>Sushi Bar</td>
+                  <td>Completo</td>
+                  <td>${formatDate(new Date().setDate(new Date().getDate() + 3))}</td>
+                  <td>In attesa</td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm" onclick="donateOrder(2)">Dona</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td>3</td>
+                  <td>Pizzeria Napoletana</td>
+                  <td>Completo</td>
+                  <td>${formatDate(new Date().setDate(new Date().getDate() - 1))}</td>
+                  <td>Completato</td>
+                  <td>-</td>
+                </tr>
+              </tbody>
+            </table>
+          `;
+        }, 1000);
+      } catch (error) {
+        container.innerHTML = `<p>Errore durante il caricamento degli ordini: ${error.message}</p>`;
+      }
+    }
+
+    // Carica profilo
+    function loadProfile() {
+      const user = getLoggedInUser();
+      if (user) {
+        document.getElementById('profileName').value = user.name || '';
+        document.getElementById('profileEmail').value = user.username || '';
+      }
+
+      document.getElementById('profileForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        // Simulazione salvataggio profilo
+        showNotification('Profilo aggiornato con successo', 'success');
+      });
+    }
+
+    // Cerca ristoranti
+    function searchRestaurants(query) {
+      const resultsContainer = document.getElementById('searchResults');
+
+      if (!query) {
+        resultsContainer.innerHTML = '<p>Inserisci un termine di ricerca</p>';
+        return;
+      }
+
+      resultsContainer.innerHTML = '<p>Ricerca in corso...</p>';
+
+      // Simulazione ricerca
+      setTimeout(() => {
+        fetch('/api/restaurants')
+          .then(response => response.json())
+          .then(restaurants => {
+            const filtered = restaurants.filter(r => 
+              r.name.toLowerCase().includes(query.toLowerCase())
+            );
+
+            if (filtered.length === 0) {
+              resultsContainer.innerHTML = '<p>Nessun risultato trovato</p>';
+              return;
+            }
+
+            resultsContainer.innerHTML = '<h3>Risultati della ricerca</h3>';
+            filtered.forEach(restaurant => {
+              resultsContainer.innerHTML += `
+                <div class="card">
+                  <div class="card-body">
+                    <h3>${restaurant.name}</h3>
+                    <p>Tipologia: ${restaurant.type}</p>
+                    <p>Distanza: ${restaurant.distance}</p>
+                    <p>Valutazione: ${restaurant.rating}/5</p>
+                    <button class="btn btn-primary mt-10" onclick="viewRestaurant(${restaurant.id})">Vedi abbonamenti</button>
+                  </div>
+                </div>
+              `;
+            });
+          });
+      }, 500);
+    }
+
+    // Visualizza ristorante e abbonamenti
+    function viewRestaurant(id) {
+      // Simulazione: nella versione reale redirigeremmo a una pagina del ristorante
+      // o mostreremmo un modale con gli abbonamenti
+      fetch('/api/subscription-plans')
+        .then(response => response.json())
+        .then(plans => {
+          // Filtra i piani (in una versione reale, lo farebbe il server)
+          const restaurantPlans = plans.filter(p => p.userId === id);
+
+          const modal = document.createElement('div');
+          modal.className = 'modal';
+          modal.innerHTML = `
+            <div class="modal-content">
+              <div class="modal-header">
+                <h2>Abbonamenti disponibili</h2>
+                <span class="close-modal">&times;</span>
+              </div>
+              <div class="modal-body">
+                ${restaurantPlans.length ? 
+                  restaurantPlans.map(plan => `
+                    <div class="card mb-10">
+                      <div class="card-body">
+                        <h3>${plan.name}</h3>
+                        <p>${plan.description}</p>
+                        <p>Tipo: ${plan.planType}</p>
+                        <p>Prezzo base: ${formatCurrency(plan.basePrice)}</p>
+                        <button class="btn btn-primary mt-10" onclick="subscribeToPlan(${plan.id})">Abbonati</button>
+                      </div>
+                    </div>
+                  `).join('') 
+                  : '<p>Nessun abbonamento disponibile per questo ristorante</p>'
+                }
+              </div>
+            </div>
+          `;
+
+          document.body.appendChild(modal);
+
+          // Chiudi il modale al click sulla X
+          modal.querySelector('.close-modal').addEventListener('click', () => {
+            modal.remove();
+          });
+
+          // Chiudi il modale al click fuori dal contenuto
+          modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+              modal.remove();
+            }
+          });
+        });
+    }
+
+    // Abbonati a un piano
+    function subscribeToPlan(planId) {
+      // Simulazione abbonamento
+      showNotification('Abbonamento sottoscritto con successo!', 'success');
+
+      // Chiudi eventuali modali aperti
+      const modal = document.querySelector('.modal');
+      if (modal) {
+        modal.remove();
+      }
+    }
+
+    // Dona un ordine
+    function donateOrder(orderId) {
+      // Simulazione donazione
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Dona il tuo pasto</h2>
+            <span class="close-modal">&times;</span>
+          </div>
+          <div class="modal-body">
+            <p>Seleziona l'organizzazione ONLUS a cui vuoi donare il tuo pasto:</p>
+            <div class="form-group">
+              <select id="onlusSelect" class="form-control">
+                <option value="1">Caritas</option>
+                <option value="2">Banco Alimentare</option>
+                <option value="3">Comunità di Sant'Egidio</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="confirmDonation(${orderId})">Conferma donazione</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      // Chiudi il modale al click sulla X
+      modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.remove();
+      });
+
+      // Chiudi il modale al click fuori dal contenuto
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          modal.remove();
+        }
+      });
+    }
+
+    // Conferma donazione
+    function confirmDonation(orderId) {
+      const onlusId = document.getElementById('onlusSelect').value;
+
+      // Simulazione donazione
+      showNotification('Pasto donato con successo! Grazie per la tua generosità', 'success');
+
+      // Chiudi il modale
+      const modal = document.querySelector('.modal');
+      if (modal) {
+        modal.remove();
+      }
+
+      // Aggiorna l'UI
+      loadNextOrder();
+      if (document.getElementById('ordersTab').style.display !== 'none') {
+        loadOrders();
+      }
+    }
+  </script>
+
+  <style>
+    /* Stili specifici per la dashboard cliente */
+    .restaurants-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .cuisine-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 14px;
+    }
+
+    /* Modal */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background-color: white;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      padding: 15px 20px;
+      border-bottom: 1px solid #eaeaea;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .close-modal {
+      font-size: 24px;
+      cursor: pointer;
+    }
+
+    /* Notifiche */
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px 20px;
+      border-radius: 4px;
+      background-color: #333;
+      color: white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      transform: translateY(-100px);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 2000;
+    }
+
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .notification.success {
+      background-color: #28a745;
+    }
+
+    .notification.error {
+      background-color: #dc3545;
+    }
+
+    .notification.info {
+      background-color: #17a2b8;
+    }
+  </style>
+</body>
+</html>

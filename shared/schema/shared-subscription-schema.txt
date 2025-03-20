@@ -1,0 +1,286 @@
+// shared/schema/subscription-schema.ts
+import { z } from 'zod';
+
+// Schema per creare un piano di abbonamento
+export const createSubscriptionPlanSchema = z.object({
+  name: z.string().min(3, { message: 'Il nome deve contenere almeno 3 caratteri' }),
+  description: z.string().min(10, { message: 'La descrizione deve contenere almeno 10 caratteri' }),
+  plan_type: z.enum(['primo', 'secondo', 'completo'], {
+    required_error: 'Tipo di piano richiesto',
+    invalid_type_error: 'Tipo di piano non valido',
+  }),
+  base_price: z.number().positive({ message: 'Il prezzo base deve essere positivo' }),
+  user_id: z.number().int().positive(),
+});
+
+// Schema per aggiornare un piano di abbonamento
+export const updateSubscriptionPlanSchema = z.object({
+  name: z.string().min(3, { message: 'Il nome deve contenere almeno 3 caratteri' }).optional(),
+  description: z.string().min(10, { message: 'La descrizione deve contenere almeno 10 caratteri' }).optional(),
+  plan_type: z.enum(['primo', 'secondo', 'completo'], {
+    invalid_type_error: 'Tipo di piano non valido',
+  }).optional(),
+  base_price: z.number().positive({ message: 'Il prezzo base deve essere positivo' }).optional(),
+});
+
+// Schema per creare uno sconto su abbonamento
+export const createSubscriptionDiscountSchema = z.object({
+  plan_id: z.number().int().positive(),
+  deliveries_per_week: z.number().int().min(1).max(7, { message: 'Le consegne settimanali devono essere tra 1 e 7' }),
+  duration_weeks: z.number().int().positive({ message: 'La durata deve essere positiva' }),
+  discount_percentage: z.number().min(0).max(100, { message: 'Lo sconto deve essere tra 0 e 100%' }),
+});
+
+// Schema per calcolare il prezzo finale di un abbonamento
+export const calculatePriceSchema = z.object({
+  plan_id: z.number().int().positive(),
+  deliveries_per_week: z.number().int().min(1).max(7),
+  duration_weeks: z.number().int().positive(),
+});
+
+// shared/schema/order-schema.ts
+import { z } from 'zod';
+
+// Schema per creare un ordine
+export const createOrderSchema = z.object({
+  plan_id: z.number().int().positive(),
+  restaurant_id: z.number().int().positive(),
+  quantity: z.number().int().positive(),
+  delivery_date: z.string().datetime(),
+  pickup_point_id: z.number().int().positive().optional(),
+  status: z.enum(['pending', 'confirmed', 'ready', 'completed', 'cancelled', 'donated']).default('pending'),
+});
+
+// Schema per aggiornare lo stato di un ordine
+export const updateOrderStatusSchema = z.object({
+  status: z.enum(['pending', 'confirmed', 'ready', 'completed', 'cancelled', 'donated']),
+});
+
+// Schema per donare un ordine
+export const donateOrderSchema = z.object({
+  onlus_id: z.number().int().positive(),
+});
+
+// shared/schema/rating-schema.ts
+import { z } from 'zod';
+
+// Schema per creare una valutazione
+export const createRatingSchema = z.object({
+  plan_id: z.number().int().positive(),
+  rating: z.number().int().min(1).max(5, { message: 'La valutazione deve essere tra 1 e 5 stelle' }),
+  comment: z.string().optional().nullable(),
+});
+
+// Schema per aggiornare una valutazione
+export const updateRatingSchema = z.object({
+  rating: z.number().int().min(1).max(5, { message: 'La valutazione deve essere tra 1 e 5 stelle' }),
+  comment: z.string().optional().nullable(),
+});
+
+// shared/schema/user-schema.ts
+import { z } from 'zod';
+
+// Schema per la registrazione di un nuovo utente
+export const registerUserSchema = z.object({
+  username: z.string().min(3, { message: 'Username deve contenere almeno 3 caratteri' }),
+  password: z.string().min(6, { message: 'Password deve contenere almeno 6 caratteri' }),
+  name: z.string().min(2, { message: 'Nome deve contenere almeno 2 caratteri' }),
+  user_type: z.enum(['customer', 'tavola_calda', 'onlus'], {
+    required_error: 'Tipo di utente richiesto',
+    invalid_type_error: 'Tipo di utente non valido',
+  }),
+  // Campi opzionali per tavola_calda e onlus
+  business_name: z.string().optional(),
+  business_type: z.string().optional(),
+  assistance_type: z.string().optional(),
+  address: z.string().optional(),
+  description: z.string().optional(),
+  activities: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+});
+
+// Schema per il login
+export const loginSchema = z.object({
+  username: z.string().min(1, { message: 'Username richiesto' }),
+  password: z.string().min(1, { message: 'Password richiesta' }),
+});
+
+// Schema per l'aggiornamento del profilo
+export const updateProfileSchema = z.object({
+  name: z.string().min(2, { message: 'Nome deve contenere almeno 2 caratteri' }).optional(),
+  business_name: z.string().optional(),
+  business_type: z.string().optional(),
+  assistance_type: z.string().optional(),
+  address: z.string().optional(),
+  description: z.string().optional(),
+  activities: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  preferred_pickup_point: z.string().optional(),
+});
+
+// shared/schema/notification-schema.ts
+import { z } from 'zod';
+
+// Schema per creare una notifica
+export const createNotificationSchema = z.object({
+  user_id: z.number().int().positive(),
+  title: z.string().min(1, { message: 'Titolo richiesto' }),
+  message: z.string().min(1, { message: 'Messaggio richiesto' }),
+  type: z.enum(['order', 'donation', 'system', 'rating'], {
+    required_error: 'Tipo di notifica richiesto',
+    invalid_type_error: 'Tipo di notifica non valido',
+  }),
+  related_id: z.number().int().positive().optional().nullable(),
+});
+
+// shared/schema/pickup-schema.ts
+import { z } from 'zod';
+
+// Schema per creare un punto di ritiro
+export const createPickupPointSchema = z.object({
+  name: z.string().min(3, { message: 'Il nome deve contenere almeno 3 caratteri' }),
+  address: z.string().min(5, { message: 'L\'indirizzo deve contenere almeno 5 caratteri' }),
+  latitude: z.number(),
+  longitude: z.number(),
+  business_name: z.string().min(1, { message: 'Nome attività richiesto' }),
+  pickup_times: z.array(z.string()),
+});
+
+// Schema per cercare punti di ritiro vicini
+export const nearbyPickupPointsSchema = z.object({
+  lat: z.number(),
+  lng: z.number(),
+  radius: z.number().positive().default(5),
+});
+
+// shared/types/common-types.ts
+export interface User {
+  id: number;
+  username: string;
+  name: string;
+  userType: 'customer' | 'tavola_calda' | 'onlus';
+  businessName?: string;
+  businessType?: string;
+  assistanceType?: string;
+  address?: string;
+  description?: string;
+  activities?: string;
+  preferredPickupPoint?: string;
+  inviteCode?: string;
+  favoriteRestaurants?: number[];
+  latitude?: number;
+  longitude?: number;
+  avgRating?: number;
+  totalRatings?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionPlan {
+  id: number;
+  userId: number;
+  name: string;
+  description: string;
+  planType: 'primo' | 'secondo' | 'completo';
+  basePrice: number;
+  avgRating: number;
+  totalRatings: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionDiscount {
+  id: number;
+  planId: number;
+  deliveriesPerWeek: number;
+  durationWeeks: number;
+  discountPercentage: number;
+  createdAt: string;
+}
+
+export interface Order {
+  id: number;
+  userId: number;
+  planId: number;
+  restaurantId: number;
+  quantity: number;
+  deliveryDate: string;
+  pickupPointId?: number | null;
+  status: 'pending' | 'confirmed' | 'ready' | 'completed' | 'cancelled' | 'donated';
+  isDonated: boolean;
+  onlusId?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionRating {
+  id: number;
+  userId: number;
+  planId: number;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: number;
+  userId: number;
+  title: string;
+  message: string;
+  type: 'order' | 'donation' | 'system' | 'rating';
+  isRead: boolean;
+  relatedId: number | null;
+  createdAt: string;
+}
+
+export interface PickupPoint {
+  id: number;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  businessName: string;
+  pickupTimes: string[];
+  distance?: number;
+  distanceText?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// shared/types/api-types.ts
+export interface AuthResponse {
+  user: User;
+  token?: string;
+}
+
+export interface ErrorResponse {
+  message: string;
+  errors?: any[];
+}
+
+export interface SuccessResponse {
+  message: string;
+  [key: string]: any;
+}
+
+export interface PriceCalculation {
+  basePrice: number;
+  baseTotal: number;
+  discountPercentage: number;
+  discountAmount: number;
+  finalPrice: number;
+}
+
+export interface RestaurantSearchParams {
+  cuisineType?: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+}
+
+export interface NotificationSettings {
+  notificationsEnabled: boolean;
+  emailNotifications: boolean;
+}

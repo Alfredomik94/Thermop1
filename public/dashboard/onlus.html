@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard ONLUS - Thermopolio</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container header-content">
+      <a href="/dashboard/onlus.html" class="logo">Thermopolio</a>
+      <div class="user-info">
+        <span class="user-name" id="userNameDisplay">ONLUS</span>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="dashboard">
+    <div class="sidebar">
+      <ul class="sidebar-menu">
+        <li><a href="#" class="active" data-tab="donations">Donazioni</a></li>
+        <li><a href="#" data-tab="statistics">Statistiche</a></li>
+        <li><a href="#" data-tab="profile">Profilo</a></li>
+      </ul>
+    </div>
+
+    <div class="main-content">
+      <!-- Sezione Donazioni -->
+      <div class="tab-content" id="donationsTab">
+        <h2>Donazioni ricevute</h2>
+        
+        <div class="card">
+          <div class="card-header">
+            Nuove donazioni
+          </div>
+          <div class="card-body">
+            <div id="newDonationsContainer">
+              <p>Caricamento donazioni...</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card mt-20">
+          <div class="card-header">
+            Donazioni passate
+          </div>
+          <div class="card-body">
+            <div id="pastDonationsContainer">
+              <p>Caricamento donazioni...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione Statistiche -->
+      <div class="tab-content" id="statisticsTab" style="display: none;">
+        <h2>Statistiche donazioni</h2>
+        
+        <div class="stats-grid">
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Totale donazioni</h3>
+              <div class="stats-value" id="totalDonationsStats">0</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Donazioni questo mese</h3>
+              <div class="stats-value" id="monthlyDonationsStats">0</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Donatori attivi</h3>
+              <div class="stats-value" id="activeDonorsStats">0</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-body stats-card">
+              <h3>Valore stimato (€)</h3>
+              <div class="stats-value" id="donationsValueStats">€0</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card mt-20">
+          <div class="card-header">
+            Andamento mensile
+          </div>
+          <div class="card-body">
+            <div id="monthlyChartContainer" style="height: 300px;">
+              <!-- Qui verrebbe inserito un grafico -->
+              <div class="chart-placeholder">
+                <div style="height: 20px; width: 60%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 30px; width: 45%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 60px; width: 70%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 40px; width: 55%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 50px; width: 65%; background: #e8e8e8; margin-bottom: 10px;"></div>
+                <div style="height: 80px; width: 75%; background: #e8e8e8;"></div>
+                <div class="chart-labels">
+                  <span>Gen</span>
+                  <span>Feb</span>
+                  <span>Mar</span>
+                  <span>Apr</span>
+                  <span>Mag</span>
+                  <span>Giu</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione Profilo -->
+      <div class="tab-content" id="profileTab" style="display: none;">
+        <h2>Profilo organizzazione</h2>
+        
+        <div class="card">
+          <div class="card-body">
+            <form id="onlusProfileForm">
+              <div class="form-group">
+                <label for="organizationName" class="form-label">Nome organizzazione</label>
+                <input type="text" id="organizationName" class="form-control" placeholder="Nome della tua organizzazione">
